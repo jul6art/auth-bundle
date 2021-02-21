@@ -1,10 +1,11 @@
 <?php
 
-namespace Jul6art\AuthBundle\Repository;
+namespace Jul6Art\AuthBundle\Repository;
 
-use Jul6art\AuthBundle\Entity\User;
-use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Jul6Art\AuthBundle\Entity\User;
+use Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface;
+use Jul6Art\CoreBundle\Repository\AbstractRepository;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -15,11 +16,14 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * @method User[]    findAll()
  * @method User[]    findBy(array $criteria, array $orderBy = null, $limit = null, $offset = null)
  */
-class UserRepository extends ServiceEntityRepository implements PasswordUpgraderInterface
+class UserRepository extends AbstractRepository implements PasswordUpgraderInterface, UserRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
+    /**
+     * UserRepository constructor.
+     */
+    public function __construct(ManagerRegistry $registry, string $userClass = User::class)
     {
-        parent::__construct($registry, User::class);
+        parent::__construct($registry, $userClass);
     }
 
     /**

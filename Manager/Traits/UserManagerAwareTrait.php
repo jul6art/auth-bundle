@@ -1,24 +1,23 @@
 <?php
 
-namespace Jul6art\AuthBundle\Manager\Traits;
+namespace Jul6Art\AuthBundle\Manager\Traits;
 
-use Jul6art\AuthBundle\Manager\UserManager;
+use Jul6Art\AuthBundle\Manager\Interfaces\UserManagerInterface;
 
 /**
- * Trait UserManagerAwareTrait
+ * Trait UserManagerAwareTrait.
  */
 trait UserManagerAwareTrait
 {
     /**
-     * @var UserManager
+     * @var UserManagerInterface
      */
     protected $userManager;
 
     /**
      * @required
-     * @param UserManager $userManager
      */
-    public function setUserManager(UserManager $userManager): void
+    public function setUserManager(UserManagerInterface $userManager): void
     {
         $this->userManager = $userManager;
     }

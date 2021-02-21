@@ -1,24 +1,23 @@
 <?php
 
-namespace Jul6art\AuthBundle\Repository\Traits;
+namespace Jul6Art\AuthBundle\Repository\Traits;
 
-use Jul6art\AuthBundle\Repository\UserRepository;
+use Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface;
 
 /**
- * Trait UserRepositoryAwareTrait
+ * Trait UserRepositoryAwareTrait.
  */
 trait UserRepositoryAwareTrait
 {
     /**
-     * @var UserRepository
+     * @var UserRepositoryInterface
      */
     protected $userRepository;
 
     /**
      * @required
-     * @param UserRepository $userRepository
      */
-    public function setUserRepository(UserRepository $userRepository): void
+    public function setUserRepository(UserRepositoryInterface $userRepository): void
     {
         $this->userRepository = $userRepository;
     }

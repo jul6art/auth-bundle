@@ -1,59 +1,43 @@
 <?php
 
-namespace Jul6art\AuthBundle\Entity;
+namespace Jul6Art\AuthBundle\Entity;
 
-use ApiPlatform\Core\Annotation\ApiResource;
-use Jul6art\AuthBundle\Repository\UserRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Jul6Art\AuthBundle\Repository\UserRepository;
+use Jul6Art\CoreBundle\Entity\Traits\IdTrait;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
- * @ApiResource(
- *     mercure=true,
- *     attributes={"pagination_client_items_per_page"=true},
- *     itemOperations={
- *         "get"={"security"="is_granted('ROLE_ADMIN')"},
- *         "put"={"security"="is_granted('ROLE_ADMIN')"},
- *         "patch"={"security"="is_granted('ROLE_ADMIN')"},
- *         "delete"={"security"="is_granted('ROLE_ADMIN')"},
- *     })
  * @ORM\Entity(repositoryClass=UserRepository::class)
  */
 class User implements UserInterface
 {
-    /**
-     * @ORM\Id
-     * @ORM\GeneratedValue
-     * @ORM\Column(type="integer")
-     */
-    private $id;
+    use IdTrait;
 
     /**
      * @ORM\Column(type="string", length=180, unique=true)
      */
-    private $email;
+    protected $email;
 
     /**
      * @ORM\Column(type="json")
      */
-    private $roles = [];
+    protected $roles = [];
 
     /**
      * @var string The hashed password
      * @ORM\Column(type="string")
      */
-    private $password;
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
+    protected $password;
 
     public function getEmail(): ?string
     {
         return $this->email;
     }
 
+    /**
+     * @return $this
+     */
     public function setEmail(string $email): self
     {
         $this->email = $email;
@@ -98,6 +82,9 @@ class User implements UserInterface
         return (string) $this->password;
     }
 
+    /**
+     * @return $this
+     */
     public function setPassword(string $password): self
     {
         $this->password = $password;

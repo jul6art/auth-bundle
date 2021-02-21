@@ -1,6 +1,7 @@
 <?php
 
 // @TODO update the namespace
+
 namespace Jul6Art\AuthBundle;
 
 use Symfony\Component\HttpKernel\Bundle\Bundle;

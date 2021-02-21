@@ -1,3 +1,11 @@
 services:
 
+#    Jul6Art\AuthBundle\DataFixtures\UserFixtures:
+#        calls:
+#            - [setFaker]
+#            - [setPasswordEncoder, ['@security.user_password_encoder.generic']]
+#        tags:
+#
 
+    Jul6Art\AuthBundle\Manager\Interfaces\UserManagerInterface: '@Jul6Art\AuthBundle\Manager\UserManager'
+    Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface: '@Jul6Art\AuthBundle\Repository\UserRepository'

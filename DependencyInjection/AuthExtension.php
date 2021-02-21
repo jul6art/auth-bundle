@@ -1,6 +1,7 @@
 <?php
 
 // @TODO update the namespace
+
 namespace Jul6Art\AuthBundle\DependencyInjection;
 
 use Symfony\Component\Config\FileLocator;
