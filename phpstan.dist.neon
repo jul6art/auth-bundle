@@ -1,0 +1,15 @@
+parameters:
+    level: max
+    phpVersion:
+        min: 80500
+        max: 80599
+    paths:
+        - AuthBundle.php
+        - DependencyInjection
+        - Entity
+        - Factory
+        - Manager
+        - Repository
+        - Tests
+        - rector.php
+    treatPhpDocTypesAsCertain: false

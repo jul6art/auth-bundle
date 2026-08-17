@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jul6Art\AuthBundle\Factory;
 
 use Jul6Art\AuthBundle\Entity\User;
@@ -11,11 +13,12 @@ use Jul6Art\CoreBundle\Factory\Interfaces\FactoryInterface;
 final class UserFactory implements FactoryInterface
 {
     /**
-     * {@inheritDoc}
+     * @throws \InvalidArgumentException if any argument is passed
      */
-    public static function create(...$args): object
+    #[\Override]
+    public static function create(mixed ...$args): User
     {
-        if (\count($args)) {
+        if ([] !== $args) {
             throw new \InvalidArgumentException('You don\'t need arguments to create a User');
         }
 

@@ -1,44 +1,45 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Jul6Art\AuthBundle\Entity;
 
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Jul6Art\AuthBundle\Entity\Interfaces\UserInterface;
 use Jul6Art\AuthBundle\Repository\UserRepository;
 use Jul6Art\CoreBundle\Entity\Traits\IdTrait;
-use Symfony\Component\Security\Core\User\UserInterface;
 
-/**
- * @ORM\Entity(repositoryClass=UserRepository::class)
- */
+#[ORM\Entity(repositoryClass: UserRepository::class)]
 class User implements UserInterface
 {
     use IdTrait;
 
     /**
-     * @ORM\Column(type="string", length=180, unique=true)
+     * Left uninitialised rather than nullable so the property type matches the
+     * NOT NULL column; the getters use "??" which does not trip on that.
      */
-    protected $email;
+    #[ORM\Column(type: Types::STRING, length: 180, unique: true)]
+    protected string $email;
 
     /**
-     * @ORM\Column(type="json")
+     * @var list<string>
      */
-    protected $roles = [];
+    #[ORM\Column(type: Types::JSON)]
+    protected array $roles = [];
 
     /**
-     * @var string The hashed password
-     * @ORM\Column(type="string")
+     * The hashed password.
      */
-    protected $password;
+    #[ORM\Column(type: Types::STRING)]
+    protected string $password;
 
     public function getEmail(): ?string
     {
-        return $this->email;
+        return $this->email ?? null;
     }
 
-    /**
-     * @return $this
-     */
-    public function setEmail(string $email): self
+    public function setEmail(string $email): static
     {
         $this->email = $email;
 
@@ -48,44 +49,53 @@ class User implements UserInterface
     /**
      * A visual identifier that represents this user.
      *
-     * @see UserInterface
+     * Replaces getUsername(), dropped from Symfony's UserInterface in 6.0. The
+     * interface documents a non-empty return, hence the guard.
+     *
+     * @throws \LogicException if the user carries no email yet
      */
-    public function getUsername(): string
+    #[\Override]
+    public function getUserIdentifier(): string
     {
-        return (string) $this->email;
+        $email = $this->email ?? '';
+
+        if ('' === $email) {
+            throw new \LogicException('The user has no email, so it cannot be identified.');
+        }
+
+        return $email;
     }
 
     /**
-     * @see UserInterface
+     * @return list<string>
      */
+    #[\Override]
     public function getRoles(): array
     {
         $roles = $this->roles;
         // guarantee every user at least has ROLE_USER
         $roles[] = 'ROLE_USER';
 
-        return array_unique($roles);
+        return array_values(array_unique($roles));
     }
 
-    public function setRoles(array $roles): self
+    /**
+     * @param list<string> $roles
+     */
+    public function setRoles(array $roles): static
     {
         $this->roles = $roles;
 
         return $this;
     }
 
-    /**
-     * @see UserInterface
-     */
+    #[\Override]
     public function getPassword(): string
     {
-        return (string) $this->password;
+        return $this->password ?? '';
     }
 
-    /**
-     * @return $this
-     */
-    public function setPassword(string $password): self
+    public function setPassword(string $password): static
     {
         $this->password = $password;
 
@@ -93,22 +103,11 @@ class User implements UserInterface
     }
 
     /**
-     * Returning a salt is only needed, if you are not using a modern
-     * hashing algorithm (e.g. bcrypt or sodium) in your security.yaml.
-     *
-     * @see UserInterface
+     * Still required by Symfony's UserInterface in 7.4 though deprecated since 7.3:
+     * clear sensitive data from __serialize() instead.
      */
-    public function getSalt(): ?string
+    #[\Override]
+    public function eraseCredentials(): void
     {
-        return null;
-    }
-
-    /**
-     * @see UserInterface
-     */
-    public function eraseCredentials()
-    {
-        // If you store any temporary, sensitive data on the user, clear it here
-        // $this->plainPassword = null;
     }
 }

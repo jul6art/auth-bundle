@@ -1,6 +1,6 @@
 <?php
 
-// @TODO update the namespace
+declare(strict_types=1);
 
 namespace Jul6Art\AuthBundle\DependencyInjection;
 
@@ -12,21 +12,19 @@ use Symfony\Component\Config\Definition\ConfigurationInterface;
  */
 class Configuration implements ConfigurationInterface
 {
-    /**
-     * {@inheritdoc}
-     */
-    public function getConfigTreeBuilder()
+    #[\Override]
+    public function getConfigTreeBuilder(): TreeBuilder
     {
-        // @TODO update the bundle configuration root name
-        $builder = new TreeBuilder('auth');
+        $treeBuilder = new TreeBuilder('auth');
 
-        $node = $builder->getRootNode();
-
-        $node
+        $treeBuilder->getRootNode()
             ->children()
-                ->scalarNode('enabled')->defaultTrue()->end()
+                ->booleanNode('enabled')
+                    ->info('Exposed as the "auth.enabled" container parameter.')
+                    ->defaultTrue()
+                ->end()
             ->end();
 
-        return $builder;
+        return $treeBuilder;
     }
 }

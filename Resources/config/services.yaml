@@ -1,11 +1,18 @@
 services:
 
-#    Jul6Art\AuthBundle\DataFixtures\UserFixtures:
-#        calls:
-#            - [setFaker]
-#            - [setPasswordEncoder, ['@security.user_password_encoder.generic']]
-#        tags:
-#
+    # The interface aliases below used to point at services nobody registered, which
+    # made the container fail to compile. The bundle now declares them itself,
+    # explicitly rather than through autowiring, as bundles should.
+
+    Jul6Art\AuthBundle\Repository\UserRepository:
+        arguments:
+            - '@doctrine'
+        tags:
+            - { name: doctrine.repository_service }
+
+    Jul6Art\AuthBundle\Manager\UserManager:
+        calls:
+            - setUserRepository: ['@Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface']
 
     Jul6Art\AuthBundle\Manager\Interfaces\UserManagerInterface: '@Jul6Art\AuthBundle\Manager\UserManager'
     Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface: '@Jul6Art\AuthBundle\Repository\UserRepository'
