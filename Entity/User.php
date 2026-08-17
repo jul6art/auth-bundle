@@ -16,6 +16,14 @@ class User implements UserInterface
     use IdTrait;
 
     /**
+     * Every user carries this role implicitly: getRoles() adds it and it is never
+     * stored, so applications do not have to hard code the string.
+     */
+    public const string ROLE_USER = 'ROLE_USER';
+
+    public const string ROLE_ADMIN = 'ROLE_ADMIN';
+
+    /**
      * Left uninitialised rather than nullable so the property type matches the
      * NOT NULL column; the getters use "??" which does not trip on that.
      */
@@ -74,7 +82,7 @@ class User implements UserInterface
     {
         $roles = $this->roles;
         // guarantee every user at least has ROLE_USER
-        $roles[] = 'ROLE_USER';
+        $roles[] = self::ROLE_USER;
 
         return array_values(array_unique($roles));
     }
