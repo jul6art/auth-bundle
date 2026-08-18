@@ -42,6 +42,12 @@ class User implements UserInterface
     #[ORM\Column(type: Types::STRING)]
     protected string $password;
 
+    /**
+     * Plain password, never persisted: it carries what a form collected until the
+     * application hashes it. eraseCredentials() clears it.
+     */
+    protected ?string $plainPassword = null;
+
     public function getEmail(): ?string
     {
         return $this->email ?? null;
@@ -110,12 +116,25 @@ class User implements UserInterface
         return $this;
     }
 
+    public function getPlainPassword(): ?string
+    {
+        return $this->plainPassword;
+    }
+
+    public function setPlainPassword(?string $plainPassword): static
+    {
+        $this->plainPassword = $plainPassword;
+
+        return $this;
+    }
+
     /**
-     * Still required by Symfony's UserInterface in 7.4 though deprecated since 7.3:
-     * clear sensitive data from __serialize() instead.
+     * Still required by Symfony's UserInterface in 7.4 though deprecated since 7.3.
+     * It has a job here: dropping the plain password once it has been hashed.
      */
     #[\Override]
     public function eraseCredentials(): void
     {
+        $this->plainPassword = null;
     }
 }
