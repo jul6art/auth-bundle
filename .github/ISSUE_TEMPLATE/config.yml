@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/jul6art/auth-bundle/security/advisories/new
+    about: A flaw in password handling, a hash or token that escapes, account takeover through lookup. Reported privately, never as an issue.
+  - name: How to contribute
+    url: https://github.com/jul6art/auth-bundle/blob/master/.github/CONTRIBUTING.md
+    about: The quality gate (composer qa), what the CI adds on top of it, and the house rules.
+  - name: Documentation
+    url: https://github.com/jul6art/auth-bundle#readme
+    about: Configuration, contracts, and the traps already paid for.
