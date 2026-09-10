@@ -129,10 +129,10 @@ class User implements UserInterface
     }
 
     /**
-     * Still required by Symfony's UserInterface in 7.4 though deprecated since 7.3.
-     * It has a job here: dropping the plain password once it has been hashed.
+     * Deprecated on `UserInterface` since Symfony 7.3, and gone from the interface entirely in
+     * 8.0 — no `#[\Override]` here, or loading this class under Symfony 8 is a fatal error, not a
+     * deprecation notice. Still has a job: dropping the plain password once it has been hashed.
      */
-    #[\Override]
     public function eraseCredentials(): void
     {
         $this->plainPassword = null;
