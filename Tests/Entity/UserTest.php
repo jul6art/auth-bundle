@@ -86,13 +86,44 @@ final class UserTest extends TestCase
         self::assertSame('hashed', $user->getPassword());
     }
 
-    public function testEraseCredentialsIsANoOp(): void
+    /**
+     * Symfony 7.3 deprecates implementing `eraseCredentials()`, and only stays silent about a method
+     * that carries `#[\Deprecated]` — which also makes Symfony stop calling it. The job it did moved
+     * to `__serialize()`, asserted below.
+     */
+    public function testEraseCredentialsIsMarkedDeprecated(): void
     {
-        $user = new User()->setEmail('user@example.com')->setPassword('hashed');
+        self::assertNotEmpty(new \ReflectionMethod(User::class, 'eraseCredentials')->getAttributes(\Deprecated::class));
+    }
 
-        $user->eraseCredentials();
+    /**
+     * ⚠️ What the session stores is the serialized user. A plain password set in memory — a
+     * registration or a password change, in the same request — would otherwise be written there in
+     * clear, and so would the password HASH on every login.
+     *
+     * Symfony ≥ 7.3 compares a CRC32C of the hash when it refreshes the user, which is what lets the
+     * session carry a checksum instead of the hash itself and still log the user out when the
+     * password changes.
+     */
+    public function testTheSessionNeverCarriesAPasswordOrItsHash(): void
+    {
+        $user = new User()->setEmail('user@example.com')->setPassword('$2y$13$hashed')->setPlainPassword('s3cret');
 
-        self::assertSame('hashed', $user->getPassword());
+        $serialized = serialize($user);
+
+        self::assertStringNotContainsString('s3cret', $serialized);
+        self::assertStringNotContainsString('$2y$13$hashed', $serialized);
+        self::assertStringContainsString(hash('crc32c', '$2y$13$hashed'), $serialized);
+    }
+
+    public function testTheSerializedUserComesBackWithItsIdentity(): void
+    {
+        $user = unserialize(serialize(new User()->setEmail('user@example.com')->setPassword('hashed')->setRoles(['ROLE_ADMIN'])));
+
+        self::assertInstanceOf(User::class, $user);
+        self::assertSame('user@example.com', $user->getUserIdentifier());
+        self::assertContains('ROLE_ADMIN', $user->getRoles());
+        self::assertNull($user->getPlainPassword());
     }
 
     public function testTheIdComesFromTheCoreBundleTrait(): void

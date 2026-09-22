@@ -44,9 +44,32 @@ class User implements UserInterface
 
     /**
      * Plain password, never persisted: it carries what a form collected until the
-     * application hashes it. eraseCredentials() clears it.
+     * application hashes it. __serialize() keeps it out of the session.
      */
     protected ?string $plainPassword = null;
+
+    /**
+     * What the session stores of this user — without the plain password, and with a checksum of the
+     * hash instead of the hash.
+     *
+     * The session keeps the serialized user between requests: a plain password set during the same
+     * request (a registration, a password change) would otherwise be written there in clear, and the
+     * hash itself on every login. Symfony ≥ 7.3 compares a CRC32C of the hash when it refreshes the
+     * user, so the checksum still logs the user out when the password changes.
+     *
+     * @return array<mixed>
+     */
+    public function __serialize(): array
+    {
+        $data = get_mangled_object_vars($this);
+        // Mangled names, as PHP's own serialization writes them: protected properties are keyed
+        // "\0*\0<name>".
+        $data["\0*\0plainPassword"] = null;
+        // `?? ''`: the property is left uninitialised on a user that was never given a password.
+        $data["\0*\0password"] = hash('crc32c', $this->password ?? '');
+
+        return $data;
+    }
 
     public function getEmail(): ?string
     {
@@ -131,8 +154,13 @@ class User implements UserInterface
     /**
      * Deprecated on `UserInterface` since Symfony 7.3, and gone from the interface entirely in
      * 8.0 — no `#[\Override]` here, or loading this class under Symfony 8 is a fatal error, not a
-     * deprecation notice. Still has a job: dropping the plain password once it has been hashed.
+     * deprecation notice.
+     *
+     * `#[\Deprecated]` is what Symfony 7.3 asks for — it stops calling the method and stops warning
+     * about it. The job it did, dropping the plain password, moved to {@see __serialize()}, the one
+     * place where forgetting it would matter.
      */
+    #[\Deprecated(message: 'since Symfony 7.3, credentials are erased by __serialize()')]
     public function eraseCredentials(): void
     {
         $this->plainPassword = null;
