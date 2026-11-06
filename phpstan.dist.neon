@@ -5,6 +5,7 @@ parameters:
         max: 80599
     paths:
         - AuthBundle.php
+        - Api
         - DependencyInjection
         - Entity
         - Factory

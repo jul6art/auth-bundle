@@ -1,0 +1,7 @@
+password_reset:
+    subject: 'Réinitialiser votre mot de passe — %app%'
+    greeting: 'Bonjour %name%,'
+    intro: 'Quelqu’un a demandé un nouveau mot de passe pour votre compte %app%.'
+    action: 'Choisir un nouveau mot de passe'
+    expiry: 'Ce lien est valable une heure, et ne sert qu’une fois.'
+    ignore: 'Si vous n’êtes pas à l’origine de cette demande, ignorez ce message : votre mot de passe ne change pas.'

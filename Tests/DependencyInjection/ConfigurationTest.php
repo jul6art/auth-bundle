@@ -8,6 +8,7 @@ use Jul6Art\AuthBundle\DependencyInjection\Configuration;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\Definition\Exception\InvalidTypeException;
 use Symfony\Component\Config\Definition\Processor;
 
@@ -21,12 +22,63 @@ final class ConfigurationTest extends TestCase
 
     public function testItIsEnabledByDefault(): void
     {
-        self::assertSame(['enabled' => true], $this->process([]));
+        self::assertTrue($this->process([])['enabled']);
     }
 
     public function testItCanBeDisabled(): void
     {
-        self::assertSame(['enabled' => false], $this->process([['enabled' => false]]));
+        self::assertFalse($this->process([['enabled' => false]])['enabled']);
+    }
+
+    /**
+     * The API sign-in stays off unless an application asks for it: its packages are only suggested.
+     */
+    public function testTheApiSignInIsOffByDefault(): void
+    {
+        self::assertSame(['enabled' => false, 'two_factor_required' => true, 'realms' => []], $this->process([])['api']);
+    }
+
+    public function testARealmTakesTheBundlesTemplatesUnlessItNamesItsOwn(): void
+    {
+        $api = $this->process([['api' => ['realms' => ['shop' => [
+            'firewalls' => ['shop_login', 'shop_api'],
+            'user_class' => 'App\Entity\User',
+            'login_record_class' => 'App\Entity\LoginRecord',
+            'refresh_token_class' => 'App\Entity\RefreshToken',
+            'reset_password_request_class' => 'App\Entity\ResetPasswordRequest',
+            'issuer' => 'Shop',
+            'mail' => ['from' => 'no-reply@example.org', 'reset_links' => ['en' => 'https://example.org/password/{token}']],
+        ]]]]])['api'];
+
+        self::assertIsArray($api);
+        self::assertTrue($api['enabled']);
+        $realms = $api['realms'];
+        self::assertIsArray($realms);
+        $shop = $realms['shop'];
+        self::assertIsArray($shop);
+        self::assertSame([
+            'from' => 'no-reply@example.org',
+            'reset_links' => ['en' => 'https://example.org/password/{token}'],
+            'html_template' => '@Auth/emails/password_reset.html.twig',
+            'text_template' => '@Auth/emails/password_reset.txt.twig',
+            'subject' => 'password_reset.subject',
+            'translation_domain' => 'auth_emails',
+        ], $shop['mail'] ?? null);
+    }
+
+    public function testARealmWithoutAResetLinkIsRefused(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+
+        $this->process([['api' => ['realms' => ['shop' => [
+            'firewalls' => ['shop_api'],
+            'user_class' => 'App\Entity\User',
+            'login_record_class' => 'App\Entity\LoginRecord',
+            'refresh_token_class' => 'App\Entity\RefreshToken',
+            'reset_password_request_class' => 'App\Entity\ResetPasswordRequest',
+            'issuer' => 'Shop',
+            'mail' => ['from' => 'no-reply@example.org', 'reset_links' => []],
+        ]]]]]);
     }
 
     /**

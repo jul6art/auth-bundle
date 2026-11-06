@@ -76,6 +76,17 @@ final class AuthExtensionTest extends TestCase
         self::assertFalse($this->prepend(['enabled' => false])->getParameter('auth.enabled'));
     }
 
+    /**
+     * An application reads the switch of the second factor from its environment: resolved too early, the
+     * placeholder became a string, which the boolean node refused — the kernel did not compile.
+     */
+    public function testPrependLeavesAnEnvironmentSwitchOfTheApiSignInToLoad(): void
+    {
+        $container = $this->prepend(['api' => ['two_factor_required' => '%env(bool:TWO_FACTOR_REQUIRED)%']]);
+
+        self::assertTrue($container->getParameter('auth.enabled'));
+    }
+
     private function containerBuilder(): ContainerBuilder
     {
         return new ContainerBuilder(new ParameterBag([

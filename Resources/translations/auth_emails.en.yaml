@@ -1,0 +1,7 @@
+password_reset:
+    subject: 'Reset your password — %app%'
+    greeting: 'Hello %name%,'
+    intro: 'Someone asked for a new password for your %app% account.'
+    action: 'Choose a new password'
+    expiry: 'This link is valid for one hour, and works once.'
+    ignore: 'If you did not ask for it, ignore this message: your password does not change.'
