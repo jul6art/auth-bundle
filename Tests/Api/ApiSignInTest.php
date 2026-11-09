@@ -6,9 +6,11 @@ namespace Jul6Art\AuthBundle\Tests\Api;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\Account;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\LoginRecord;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\RefreshToken;
+use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\ResetPasswordRequest;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmB;
 use OTPHP\TOTP;
 use PHPUnit\Framework\Attributes\CoversNothing;
@@ -154,6 +156,27 @@ final class ApiSignInTest extends WebTestCase
         // Realm B's account, at the same address, keeps its password.
         $this->json('b', 'POST', '/api/login', ['email' => self::EMAIL, 'password' => self::PASSWORD]);
         self::assertResponseIsSuccessful();
+    }
+
+    public function testAnAccountsResetRequestsLeaveWithItInItsRealmOnly(): void
+    {
+        $this->start(twoFactorRequired: false);
+
+        $this->json('a', 'POST', '/api/password/forgot', ['email' => self::EMAIL]);
+        $this->json('b', 'POST', '/api/password/forgot', ['email' => self::EMAIL]);
+        self::assertSame(1, $this->rows('a', ResetPasswordRequest::class));
+        self::assertSame(1, $this->rows('b', RealmB\ResetPasswordRequest::class));
+
+        // Outside any request — a console command that deletes the account: its realm is the account's.
+        $account = $this->manager('a')->getRepository(Account::class)->findOneBy(['email' => self::EMAIL]);
+        self::assertInstanceOf(Account::class, $account);
+        $requests = self::getContainer()->get(RealmResetPasswordRequests::class);
+        self::assertInstanceOf(RealmResetPasswordRequests::class, $requests);
+        $requests->removeRequests($account);
+
+        self::assertSame(0, $this->rows('a', ResetPasswordRequest::class));
+        // Realm B's account, at the same address, keeps its own.
+        self::assertSame(1, $this->rows('b', RealmB\ResetPasswordRequest::class));
     }
 
     public function testTheLogoutClearsBothCookiesAndRevokesTheRefreshToken(): void

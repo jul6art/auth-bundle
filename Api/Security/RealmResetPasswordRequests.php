@@ -69,6 +69,20 @@ final readonly class RealmResetPasswordRequests implements ResetPasswordRequestR
         return $removed;
     }
 
+    /**
+     * Announced by the interface (`@method`) since symfonycasts 1.26, required by its 2.0. The realm is the
+     * account's, not the request's: an account is removed from a console command as well.
+     */
+    public function removeRequests(object $user): void
+    {
+        $realm = $this->realms->of($user);
+        if (null === $realm) {
+            throw new \LogicException(\sprintf('No realm of the API sign-in owns the account "%s".', $user::class));
+        }
+
+        $this->repositoryOf($realm->resetPasswordRequestClass)->removeRequests($user);
+    }
+
     private function repository(): ResetPasswordRequestRepositoryInterface
     {
         $realm = $this->realms->current();
