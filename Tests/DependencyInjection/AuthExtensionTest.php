@@ -9,6 +9,7 @@ use Jul6Art\AuthBundle\Manager\Interfaces\UserManagerInterface;
 use Jul6Art\AuthBundle\Manager\UserManager;
 use Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface;
 use Jul6Art\AuthBundle\Repository\UserRepository;
+use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -93,6 +94,52 @@ final class AuthExtensionTest extends TestCase
             'kernel.bundles' => [],
             'kernel.environment' => 'test',
         ]));
+    }
+
+    public function testTheSignInLimiterIsNotRegisteredUnlessAsked(): void
+    {
+        self::assertFalse($this->load()->hasDefinition('auth.sign_in_throttling.limiter'));
+    }
+
+    /**
+     * The budgets of Symfony's own `login_throttling`: N per identifier and IP, 5×N per IP.
+     */
+    public function testTheSignInLimiterGetsItsPathsBudgetsAndADedicatedPool(): void
+    {
+        $container = $this->containerBuilder();
+        new AuthExtension()->load([['sign_in_throttling' => ['paths' => ['/api/auth/'], 'max_attempts' => 4]]], $container);
+
+        $limiter = $container->getDefinition('auth.sign_in_throttling.limiter');
+        self::assertSame(SignInRateLimiter::class, $limiter->getClass());
+        self::assertSame(['/api/auth/'], $limiter->getArgument(2));
+        self::assertSame('%kernel.secret%', $limiter->getArgument(3));
+        self::assertSame('auth.sign_in_throttling.limiter', (string) $container->getAlias(SignInRateLimiter::class));
+
+        foreach (['global' => 20, 'local' => 4] as $scope => $limit) {
+            $budget = $container->getDefinition('auth.sign_in_throttling.'.$scope)->getArgument(0);
+            self::assertIsArray($budget);
+            self::assertSame(['id' => 'auth_sign_in_'.$scope, 'policy' => 'fixed_window', 'limit' => $limit, 'interval' => '1 minute'], $budget);
+        }
+
+        $pool = $container->getDefinition('auth.sign_in_throttling.cache');
+        self::assertArrayHasKey('cache.pool', $pool->getTags());
+        $storagePool = $container->getDefinition('auth.sign_in_throttling.storage')->getArgument(0);
+        self::assertInstanceOf(Reference::class, $storagePool);
+        self::assertSame('auth.sign_in_throttling.cache', (string) $storagePool);
+    }
+
+    /**
+     * An application names its own pool to clear it between tests.
+     */
+    public function testTheSignInLimiterCountsInThePoolTheApplicationNames(): void
+    {
+        $container = $this->containerBuilder();
+        new AuthExtension()->load([['sign_in_throttling' => ['paths' => ['/api/auth/'], 'cache_pool' => 'cache.api_auth_limiter']]], $container);
+
+        self::assertFalse($container->hasDefinition('auth.sign_in_throttling.cache'));
+        $storagePool = $container->getDefinition('auth.sign_in_throttling.storage')->getArgument(0);
+        self::assertInstanceOf(Reference::class, $storagePool);
+        self::assertSame('cache.api_auth_limiter', (string) $storagePool);
     }
 
     private function load(): ContainerBuilder

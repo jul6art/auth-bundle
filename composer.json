@@ -65,6 +65,7 @@
         "symfony/clock": "The API sign-in (auth.api): the clock of the TOTP",
         "symfony/expression-language": "The API sign-in (auth.api): the access decisions of its routes",
         "symfony/mailer": "The API sign-in (auth.api): the forgotten-password e-mail",
+        "symfony/rate-limiter": "The sign-in limiter (auth.sign_in_throttling)",
         "symfony/security-bundle": "The API sign-in (auth.api): the firewalls",
         "symfony/twig-bundle": "The API sign-in (auth.api): the e-mail templates",
         "symfonycasts/reset-password-bundle": "The API sign-in (auth.api): the forgotten password, one table per realm"

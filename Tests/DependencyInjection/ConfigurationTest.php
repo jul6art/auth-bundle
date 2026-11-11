@@ -102,6 +102,36 @@ final class ConfigurationTest extends TestCase
         yield 'array' => [[]];
     }
 
+    public function testTheSignInLimiterIsOffByDefault(): void
+    {
+        self::assertSame(
+            ['enabled' => false, 'paths' => [], 'max_attempts' => 5, 'interval' => '1 minute', 'cache_pool' => null],
+            $this->process([])['sign_in_throttling'],
+        );
+    }
+
+    /**
+     * A limiter without a path counts nothing, and would look like protection.
+     */
+    public function testTheSignInLimiterRefusesToCountNothing(): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessageIsOrContains('needs at least one path');
+
+        $this->process([['sign_in_throttling' => ['enabled' => true]]]);
+    }
+
+    public function testTheSignInLimiterTakesItsPathsAndBudget(): void
+    {
+        $config = $this->process([['sign_in_throttling' => ['paths' => ['/api/auth/', '/login'], 'max_attempts' => 3, 'cache_pool' => 'cache.limiter']]])['sign_in_throttling'];
+        self::assertIsArray($config);
+
+        self::assertTrue($config['enabled']);
+        self::assertSame(['/api/auth/', '/login'], $config['paths']);
+        self::assertSame(3, $config['max_attempts']);
+        self::assertSame('cache.limiter', $config['cache_pool']);
+    }
+
     /**
      * @param array<int, array<string, mixed>> $configs
      *

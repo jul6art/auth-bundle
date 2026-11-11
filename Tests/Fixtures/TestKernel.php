@@ -90,6 +90,8 @@ final class TestKernel extends Kernel
                     UserRepository::class,
                     UserRepositoryInterface::class,
                     'doctrine.orm.default_entity_manager',
+                    'auth.sign_in_throttling.limiter',
+                    'auth.sign_in_throttling.cache',
                 ];
 
                 foreach ($exposed as $id) {

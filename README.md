@@ -120,6 +120,47 @@ auth:
 - An application that serves several realms binds each access token to its realm (an audience), as it binds
   each host to its firewall: the bundle cannot know which host is whose.
 
+Sign-in limiter (optional)
+--------------------------
+
+Symfony's `login_throttling` limits a whole firewall: its listener checks the limiter on every passport and
+consumes it on every failure, whatever the authenticator. On a firewall that also reads a token (JWT), an
+expired or forged token is a failure too — it spends the budget of the client's IP, and once that budget is
+gone every request from the IP is refused, valid tokens included. `auth.sign_in_throttling` gives such a
+firewall a limiter that counts the sign-in paths, and only them:
+
+```shell
+composer require symfony/rate-limiter
+```
+
+```yaml
+# config/packages/auth.yaml
+auth:
+    sign_in_throttling:
+        paths: ['/api/auth/']            # the prefixes where a request is a sign-in attempt
+        max_attempts: 5                  # per identifier and IP; the IP gets five times as many
+        interval: '1 minute'
+        cache_pool: cache.sign_in_limiter # optional: name your own pool to clear it between tests
+
+# config/packages/security.yaml
+security:
+    firewalls:
+        api:
+            # json_login, jwt, refresh_jwt…
+            login_throttling:
+                limiter: auth.sign_in_throttling.limiter
+```
+
+- The budgets are those of Symfony's own limiter: `max_attempts` per identifier and IP, five times as many per
+  IP, every identifier together — the second stops a sweep that tries one address per request.
+- A successful sign-in clears the identifier's budget only: the IP's survives it, so a client that owns one
+  account cannot reset its sweep.
+- The keys are hashed with `kernel.secret`: the cache holds no address in the clear.
+- Several firewalls may name the same limiter: give it every sign-in path (`/api/auth/`, `/login`) and the web
+  form and the API share one budget, instead of adding theirs up.
+- ⚠️ The counters outlive a kernel: in tests they are shared by every class of a run. Name a pool and clear it
+  before a test signs in. Never an array pool, which forgets at the end of each request.
+
 Quality assurance
 -----------------
 

@@ -9,6 +9,7 @@ use Endroid\QrCode\Builder\Builder;
 use Gesdinet\JWTRefreshTokenBundle\GesdinetJWTRefreshTokenBundle;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
+use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use Lexik\Bundle\JWTAuthenticationBundle\LexikJWTAuthenticationBundle;
 use Scheb\TwoFactorBundle\Model\BackupCodeInterface;
 use Scheb\TwoFactorBundle\SchebTwoFactorBundle;
@@ -17,13 +18,18 @@ use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
+use Symfony\Component\RateLimiter\Storage\CacheStorage;
 use SymfonyCasts\Bundle\ResetPassword\SymfonyCastsResetPasswordBundle;
 
 /**
@@ -60,6 +66,8 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         $loader->load('services.yaml');
 
         $config = $this->processConfiguration(new Configuration(), $configs);
+        $this->loadSignInThrottling($config['sign_in_throttling'] ?? null, $container);
+
         $api = \is_array($config['api'] ?? null) ? $config['api'] : [];
         if (true !== ($api['enabled'] ?? false)) {
             return;
@@ -107,6 +115,58 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         if ($container->hasExtension('symfonycasts_reset_password')) {
             $container->prependExtensionConfig('symfonycasts_reset_password', ['request_password_repository' => RealmResetPasswordRequests::class]);
         }
+    }
+
+    /**
+     * The limiter of `auth.sign_in_throttling`, its two budgets and the pool they count in.
+     *
+     * ⚠️ The budgets are those of Symfony's own `login_throttling`: `max_attempts` per identifier and
+     * IP, five times as many per IP. A fixed window, so the 429 can tell when it ends.
+     */
+    private function loadSignInThrottling(mixed $config, ContainerBuilder $container): void
+    {
+        if (!\is_array($config) || true !== ($config['enabled'] ?? false)) {
+            return;
+        }
+
+        if (!class_exists(RateLimiterFactory::class)) {
+            throw new \LogicException('The sign-in limiter (auth.sign_in_throttling) needs "symfony/rate-limiter": composer require symfony/rate-limiter.');
+        }
+
+        $paths = $config['paths'] ?? [];
+        $maxAttempts = $config['max_attempts'] ?? 5;
+        $interval = $config['interval'] ?? '1 minute';
+        $pool = $config['cache_pool'] ?? null;
+        if (!\is_array($paths) || !\is_int($maxAttempts) || !\is_string($interval) || (null !== $pool && !\is_string($pool))) {
+            throw new \LogicException('The configuration of auth.sign_in_throttling could not be read.');
+        }
+
+        if (null === $pool) {
+            $pool = 'auth.sign_in_throttling.cache';
+            $container->setDefinition($pool, new ChildDefinition('cache.adapter.filesystem'))->addTag('cache.pool');
+        }
+
+        $container->register('auth.sign_in_throttling.storage', CacheStorage::class)
+            ->setArguments([new Reference($pool)]);
+
+        foreach (['global' => 5 * $maxAttempts, 'local' => $maxAttempts] as $scope => $limit) {
+            $container->register('auth.sign_in_throttling.'.$scope, RateLimiterFactory::class)
+                ->setArguments([
+                    ['id' => 'auth_sign_in_'.$scope, 'policy' => 'fixed_window', 'limit' => $limit, 'interval' => $interval],
+                    new Reference('auth.sign_in_throttling.storage'),
+                    // The lock of the application when it has one, as `framework.rate_limiter` does.
+                    new Reference('lock.factory', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                ]);
+        }
+
+        $container->register('auth.sign_in_throttling.limiter', SignInRateLimiter::class)
+            ->setArguments([
+                new Reference('auth.sign_in_throttling.global'),
+                new Reference('auth.sign_in_throttling.local'),
+                array_values($paths),
+                '%kernel.secret%',
+            ]);
+        $container->setAlias(SignInRateLimiter::class, 'auth.sign_in_throttling.limiter');
     }
 
     private function apiEnabled(ContainerBuilder $container): bool
