@@ -93,6 +93,16 @@ abstract class AbstractAccount implements ApiAccountInterface
         return ['ROLE_USER'];
     }
 
+    /**
+     * Still on `UserInterface` in Symfony 7.4 — the lowest version this bundle supports — and gone in 8.0:
+     * no `#[\Override]`, or loading this class under Symfony 8 is a fatal error. Nothing to erase: the
+     * account keeps no plain password.
+     */
+    #[\Deprecated(message: 'since Symfony 7.3, credentials are erased by __serialize()')]
+    public function eraseCredentials(): void
+    {
+    }
+
     #[\Override]
     public function getPassword(): ?string
     {
