@@ -9,6 +9,7 @@ use Endroid\QrCode\Builder\Builder;
 use Gesdinet\JWTRefreshTokenBundle\GesdinetJWTRefreshTokenBundle;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
+use Jul6Art\AuthBundle\Security\ApiAuthenticationFailureNormalizer;
 use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use Lexik\Bundle\JWTAuthenticationBundle\LexikJWTAuthenticationBundle;
 use Scheb\TwoFactorBundle\Model\BackupCodeInterface;
@@ -30,6 +31,7 @@ use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\CacheStorage;
+use Symfony\Component\Security\Http\Event\LoginFailureEvent;
 use SymfonyCasts\Bundle\ResetPassword\SymfonyCastsResetPasswordBundle;
 
 /**
@@ -67,6 +69,7 @@ class AuthExtension extends Extension implements PrependExtensionInterface
 
         $config = $this->processConfiguration(new Configuration(), $configs);
         $this->loadSignInThrottling($config['sign_in_throttling'] ?? null, $container);
+        $this->loadApiFailures($config['api_failures'] ?? null, $container);
 
         $api = \is_array($config['api'] ?? null) ? $config['api'] : [];
         if (true !== ($api['enabled'] ?? false)) {
@@ -167,6 +170,32 @@ class AuthExtension extends Extension implements PrependExtensionInterface
                 '%kernel.secret%',
             ]);
         $container->setAlias(SignInRateLimiter::class, 'auth.sign_in_throttling.limiter');
+    }
+
+    /**
+     * The listener of `auth.api_failures`. A global listener: SecurityBundle relays it to the dispatcher
+     * of every firewall, and the listener keeps to the firewalls it was given.
+     */
+    private function loadApiFailures(mixed $config, ContainerBuilder $container): void
+    {
+        if (!\is_array($config) || true !== ($config['enabled'] ?? false)) {
+            return;
+        }
+
+        if (!class_exists(LoginFailureEvent::class)) {
+            throw new \LogicException('The API failures (auth.api_failures) need "symfony/security-bundle": composer require symfony/security-bundle.');
+        }
+
+        $firewalls = $config['firewalls'] ?? [];
+        $invalidCredentials = $config['invalid_credentials_code'] ?? null;
+        $rateLimited = $config['rate_limited_code'] ?? null;
+        if (!\is_array($firewalls) || !\is_string($invalidCredentials) || !\is_string($rateLimited)) {
+            throw new \LogicException('The configuration of auth.api_failures could not be read.');
+        }
+
+        $container->register(ApiAuthenticationFailureNormalizer::class, ApiAuthenticationFailureNormalizer::class)
+            ->setArguments([array_values($firewalls), $invalidCredentials, $rateLimited])
+            ->addTag('kernel.event_listener', ['event' => LoginFailureEvent::class, 'method' => '__invoke']);
     }
 
     private function apiEnabled(ContainerBuilder $container): bool

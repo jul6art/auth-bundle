@@ -132,6 +132,14 @@ final class ConfigurationTest extends TestCase
         self::assertSame('cache.limiter', $config['cache_pool']);
     }
 
+    public function testTheApiFailuresAreOffByDefaultAndCoverTheApiFirewall(): void
+    {
+        self::assertSame(
+            ['enabled' => false, 'firewalls' => ['api'], 'invalid_credentials_code' => 'INVALID_CREDENTIALS', 'rate_limited_code' => 'RATE_LIMITED'],
+            $this->process([])['api_failures'],
+        );
+    }
+
     /**
      * @param array<int, array<string, mixed>> $configs
      *

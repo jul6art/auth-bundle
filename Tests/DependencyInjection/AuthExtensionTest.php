@@ -9,12 +9,14 @@ use Jul6Art\AuthBundle\Manager\Interfaces\UserManagerInterface;
 use Jul6Art\AuthBundle\Manager\UserManager;
 use Jul6Art\AuthBundle\Repository\Interfaces\UserRepositoryInterface;
 use Jul6Art\AuthBundle\Repository\UserRepository;
+use Jul6Art\AuthBundle\Security\ApiAuthenticationFailureNormalizer;
 use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Security\Http\Event\LoginFailureEvent;
 
 #[CoversClass(AuthExtension::class)]
 final class AuthExtensionTest extends TestCase
@@ -140,6 +142,21 @@ final class AuthExtensionTest extends TestCase
         $storagePool = $container->getDefinition('auth.sign_in_throttling.storage')->getArgument(0);
         self::assertInstanceOf(Reference::class, $storagePool);
         self::assertSame('cache.api_auth_limiter', (string) $storagePool);
+    }
+
+    public function testTheApiFailuresAreNotNormalisedUnlessAsked(): void
+    {
+        self::assertFalse($this->load()->hasDefinition(ApiAuthenticationFailureNormalizer::class));
+    }
+
+    public function testTheApiFailureListenerListensToEveryLoginFailureWithItsFirewallsAndCodes(): void
+    {
+        $container = $this->containerBuilder();
+        new AuthExtension()->load([['api_failures' => ['firewalls' => ['api', 'mobile'], 'rate_limited_code' => 'SLOW_DOWN']]], $container);
+
+        $definition = $container->getDefinition(ApiAuthenticationFailureNormalizer::class);
+        self::assertSame([['api', 'mobile'], 'INVALID_CREDENTIALS', 'SLOW_DOWN'], $definition->getArguments());
+        self::assertSame([['event' => LoginFailureEvent::class, 'method' => '__invoke']], $definition->getTag('kernel.event_listener'));
     }
 
     private function load(): ContainerBuilder

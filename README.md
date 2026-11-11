@@ -161,6 +161,32 @@ security:
 - ⚠️ The counters outlive a kernel: in tests they are shared by every class of a run. Name a pool and clear it
   before a test signs in. Never an array pool, which forgets at the end of each request.
 
+API failures (optional)
+-----------------------
+
+Each authenticator of an API firewall tells its own story when it fails: "Invalid credentials" for a sign-in,
+"JWT Refresh Token Not Found" for a refresh token that never existed and "Invalid JWT Refresh Token" for one
+that expired, "Expired JWT Token"… — distinctions an application has no reason to publish. And Symfony's
+throttling answers a plain 401, so a client cannot tell "wrong password" from "locked out for a minute".
+`auth.api_failures` gives every failure of the named firewalls one JSON answer:
+
+```yaml
+# config/packages/auth.yaml
+auth:
+    api_failures:
+        firewalls: [api]                          # the default; never a form login, which redirects
+        invalid_credentials_code: INVALID_CREDENTIALS
+        rate_limited_code: RATE_LIMITED           # the code of your other rate limits, if you have some
+```
+
+| Failure | Status | Body |
+|---|---|---|
+| any (password, unknown or disabled account, refresh token, JWT) | 401 | `{"code": 401, "errorCode": "INVALID_CREDENTIALS", "message": "Invalid credentials."}` |
+| the login limiter refuses | 429, `Retry-After` | `{"code": 429, "errorCode": "RATE_LIMITED", "message": "Too many attempts. Try again later."}` |
+
+`code` and `message` keep the shape LexikJWT answers with; `errorCode` is the value a client maps. A request
+without a token is not a failure but the entry point's business, and keeps its answer.
+
 Quality assurance
 -----------------
 
