@@ -14,7 +14,7 @@
     "require": {
         "php": "^8.5",
         "doctrine/doctrine-bundle": "^2.13 || ^3.0",
-        "doctrine/orm": "^3.3",
+        "doctrine/orm": "^3.5.3",
         "doctrine/persistence": "^3.4.5 || ^4.0",
         "jul6art/core-bundle": "^2.3 || ^3.0",
         "symfony/config": "^7.4 || ^8.0",
@@ -53,6 +53,9 @@
         "symfony/validator": "^7.4 || ^8.0",
         "symfony/var-dumper": "^7.4 || ^8.0",
         "symfonycasts/reset-password-bundle": "^1.26"
+    },
+    "conflict": {
+        "symfony/translation-contracts": "<3.5"
     },
     "suggest": {
         "api-platform/core": "The API sign-in (auth.api): its routes are API Platform resources",
