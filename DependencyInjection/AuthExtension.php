@@ -9,6 +9,7 @@ use Endroid\QrCode\Builder\Builder;
 use Gesdinet\JWTRefreshTokenBundle\GesdinetJWTRefreshTokenBundle;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
+use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
 use Jul6Art\AuthBundle\Security\ApiAuthenticationFailureNormalizer;
 use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use Lexik\Bundle\JWTAuthenticationBundle\LexikJWTAuthenticationBundle;
@@ -49,6 +50,7 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         'scheb/2fa-bundle' => SchebTwoFactorBundle::class,
         'scheb/2fa-totp' => TotpAuthenticatorInterface::class,
         'scheb/2fa-backup-code' => BackupCodeInterface::class,
+        'symfony/rate-limiter' => RateLimiterFactory::class,
         'endroid/qr-code' => Builder::class,
         'symfonycasts/reset-password-bundle' => SymfonyCastsResetPasswordBundle::class,
         'symfony/security-bundle' => Security::class,
@@ -93,6 +95,38 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         $container->setParameter('auth.api.realms', $realms);
 
         new PhpFileLoader($container, new FileLocator(__DIR__.'/../Resources/config'))->load('api.php');
+        $this->loadTwoFactorThrottling($api['two_factor_throttling'] ?? null, $container);
+    }
+
+    /**
+     * The account's budget of wrong codes ({@see TwoFactorThrottle}). Always on with the API sign-in: six
+     * digits fall in a million attempts, and the firewall's limiter counts per address.
+     */
+    private function loadTwoFactorThrottling(mixed $config, ContainerBuilder $container): void
+    {
+        $config = \is_array($config) ? $config : [];
+        $maxAttempts = $config['max_attempts'] ?? 5;
+        $interval = $config['interval'] ?? '15 minutes';
+        $pool = $config['cache_pool'] ?? null;
+        if (!\is_int($maxAttempts) || !\is_string($interval) || (null !== $pool && !\is_string($pool))) {
+            throw new \LogicException('The configuration of auth.api.two_factor_throttling could not be read.');
+        }
+
+        if (null === $pool) {
+            $pool = 'auth.two_factor_throttling.cache';
+            $container->setDefinition($pool, new ChildDefinition('cache.adapter.filesystem'))->addTag('cache.pool');
+        }
+
+        $container->register('auth.two_factor_throttling.storage', CacheStorage::class)
+            ->setArguments([new Reference($pool)]);
+        $container->register('auth.two_factor_throttling.limiter', RateLimiterFactory::class)
+            ->setArguments([
+                ['id' => 'auth_two_factor', 'policy' => 'fixed_window', 'limit' => $maxAttempts, 'interval' => $interval],
+                new Reference('auth.two_factor_throttling.storage'),
+                new Reference('lock.factory', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+            ]);
+        $container->register(TwoFactorThrottle::class, TwoFactorThrottle::class)
+            ->setArguments([new Reference('auth.two_factor_throttling.limiter'), '%kernel.secret%']);
     }
 
     #[\Override]

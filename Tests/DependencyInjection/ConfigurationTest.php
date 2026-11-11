@@ -35,7 +35,12 @@ final class ConfigurationTest extends TestCase
      */
     public function testTheApiSignInIsOffByDefault(): void
     {
-        self::assertSame(['enabled' => false, 'two_factor_required' => true, 'realms' => []], $this->process([])['api']);
+        self::assertSame([
+            'enabled' => false,
+            'two_factor_required' => true,
+            'two_factor_throttling' => ['max_attempts' => 5, 'interval' => '15 minutes', 'cache_pool' => null],
+            'realms' => [],
+        ], $this->process([])['api']);
     }
 
     public function testARealmTakesTheBundlesTemplatesUnlessItNamesItsOwn(): void

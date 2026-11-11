@@ -7,8 +7,10 @@ namespace Jul6Art\AuthBundle\Api\Service;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Writer\SvgWriter;
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
+use Jul6Art\AuthBundle\Api\Http\AuthCodeException;
 use Jul6Art\AuthBundle\Api\Realm\Realms;
 use Jul6Art\AuthBundle\Api\Security\BackupCodes;
+use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
 use OTPHP\TOTP;
 use Psr\Clock\ClockInterface;
 use Scheb\TwoFactorBundle\Model\Totp\TotpConfigurationInterface;
@@ -26,6 +28,7 @@ final readonly class TotpEnrolment
         private Realms $realms,
         private Accounts $accounts,
         private ClockInterface $clock,
+        private ?TwoFactorThrottle $throttle = null,
     ) {
     }
 
@@ -57,9 +60,28 @@ final readonly class TotpEnrolment
         return implode(' ', str_split((string) $account->getTotpAuthenticationConfiguration()?->getSecret(), 4));
     }
 
+    /**
+     * Whether the code is the app's current one — and every answer spends or clears the account's budget
+     * of wrong codes ({@see TwoFactorThrottle}): the enrolment, the activation and `#[CurrentTotpCode]` all
+     * come through here.
+     *
+     * @throws AuthCodeException a 429 once the budget is spent, before the code is read
+     */
     public function isValidCode(ApiAccountInterface $account, string $code): bool
     {
-        return $account->getTotpAuthenticationConfiguration() instanceof TotpConfigurationInterface && $this->totp->checkCode($account, $code);
+        if (!$account->getTotpAuthenticationConfiguration() instanceof TotpConfigurationInterface) {
+            return false;
+        }
+
+        $this->throttle?->guard($account);
+        $valid = $this->totp->checkCode($account, $code);
+        if ($valid) {
+            $this->throttle?->succeeded($account);
+        } else {
+            $this->throttle?->failed($account);
+        }
+
+        return $valid;
     }
 
     /**

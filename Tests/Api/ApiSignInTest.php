@@ -14,6 +14,7 @@ use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\ResetPasswordRequest;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmB;
 use OTPHP\TOTP;
 use PHPUnit\Framework\Attributes\CoversNothing;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
@@ -126,6 +127,45 @@ final class ApiSignInTest extends WebTestCase
         self::assertSame(['status' => 'status.signed_in'], $this->body());
     }
 
+    /**
+     * Six digits fall in a million attempts, and the firewall's limiter counts per address: the account has five
+     * wrong codes per quarter of an hour, then even the right one is refused before it is read.
+     */
+    public function testTheSecondFactorSpendsTheAccountsBudgetOfWrongCodes(): void
+    {
+        $this->start(twoFactorRequired: true);
+        $secret = $this->enrol();
+
+        $this->client->getCookieJar()->clear();
+        $this->json('a', 'POST', '/api/login', ['email' => self::EMAIL, 'password' => self::PASSWORD]);
+        for ($attempt = 1; $attempt <= 5; ++$attempt) {
+            $this->json('a', 'POST', '/api/2fa_check', ['code' => '000000']);
+            self::assertResponseStatusCodeSame(401);
+        }
+
+        $this->json('a', 'POST', '/api/2fa_check', ['code' => TOTP::createFromSecret($secret, new NativeClock())->now()]);
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame(['error' => 'error.login.too_many_attempts'], $this->body());
+        self::assertNull($this->cookie('__Host-access_token'));
+    }
+
+    public function testTheEnrolmentSpendsTheSameBudget(): void
+    {
+        $this->start(twoFactorRequired: true);
+        $this->json('a', 'POST', '/api/login', ['email' => self::EMAIL, 'password' => self::PASSWORD]);
+        $this->client->request('GET', 'https://a.test/api/enrolment');
+        $secret = $this->secret();
+
+        for ($attempt = 1; $attempt <= 5; ++$attempt) {
+            $this->json('a', 'POST', '/api/enrolment', ['code' => '000000']);
+            self::assertResponseStatusCodeSame(422);
+        }
+
+        $this->json('a', 'POST', '/api/enrolment', ['code' => TOTP::createFromSecret($secret, new NativeClock())->now()]);
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame(['error' => 'error.login.too_many_attempts'], $this->body());
+    }
+
     public function testAResetLinkIsTheRealmsOwnAndOpensNothingElsewhere(): void
     {
         $this->start(twoFactorRequired: false);
@@ -214,6 +254,11 @@ final class ApiSignInTest extends WebTestCase
         $this->client = self::createClient(['two_factor_required' => $twoFactorRequired]);
         $this->client->disableReboot();
 
+        // The budget of wrong codes outlives the kernel (a filesystem pool): each test starts with a full one.
+        $budget = self::getContainer()->get('auth.two_factor_throttling.cache');
+        self::assertInstanceOf(CacheItemPoolInterface::class, $budget);
+        $budget->clear();
+
         $hasher = self::getContainer()->get(UserPasswordHasherInterface::class);
         self::assertInstanceOf(UserPasswordHasherInterface::class, $hasher);
         foreach (['a' => new Account(self::EMAIL, 'Someone'), 'b' => new RealmB\Account(self::EMAIL, 'Someone')] as $realm => $account) {
@@ -227,6 +272,39 @@ final class ApiSignInTest extends WebTestCase
             $manager->flush();
             $manager->clear();
         }
+    }
+
+    /**
+     * Signs in to realm A and enrols its second factor: the secret, to compute the codes.
+     *
+     * @return non-empty-string
+     */
+    private function enrol(): string
+    {
+        $this->json('a', 'POST', '/api/login', ['email' => self::EMAIL, 'password' => self::PASSWORD]);
+        $this->client->request('GET', 'https://a.test/api/enrolment');
+        $secret = $this->secret();
+        $this->json('a', 'POST', '/api/enrolment', ['code' => TOTP::createFromSecret($secret, new NativeClock())->now()]);
+        self::assertResponseIsSuccessful();
+
+        return $secret;
+    }
+
+    /**
+     * The secret the enrolment screen shows, by groups of four.
+     *
+     * @return non-empty-string
+     */
+    private function secret(): string
+    {
+        $secret = $this->body()['secret'] ?? null;
+        self::assertIsString($secret);
+        $secret = str_replace(' ', '', $secret);
+        if ('' === $secret) {
+            self::fail('The enrolment shows no secret.');
+        }
+
+        return $secret;
     }
 
     /**

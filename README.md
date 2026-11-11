@@ -81,7 +81,8 @@ required — the bundle's other users get nothing new:
 ```shell
 composer require api-platform/core lexik/jwt-authentication-bundle gesdinet/jwt-refresh-token-bundle \
     scheb/2fa-bundle scheb/2fa-totp scheb/2fa-backup-code endroid/qr-code symfonycasts/reset-password-bundle \
-    symfony/security-bundle symfony/mailer symfony/twig-bundle symfony/expression-language symfony/clock
+    symfony/security-bundle symfony/mailer symfony/twig-bundle symfony/expression-language symfony/clock \
+    symfony/rate-limiter
 ```
 
 One kernel may serve several applications, each on its own host and with its own base: each declares a
@@ -119,6 +120,26 @@ auth:
 - The reset link is always the realm's, never built from the request's host — which a visitor chooses.
 - An application that serves several realms binds each access token to its realm (an audience), as it binds
   each host to its firewall: the bundle cannot know which host is whose.
+
+**The budget of wrong codes (2.5).** Six digits fall in a million attempts, and a firewall's
+`login_throttling` counts per (identifier, IP) over a minute: a client that changes its address gets five more.
+An account has five wrong codes per quarter of an hour, whatever its address; then even the right code is
+refused before it is read, with a 429 `error.login.too_many_attempts`. Every door that checks a code spends it —
+the sign-in's second factor (`/api/2fa_check`), the enrolment, the activation and `#[CurrentTotpCode]` (backup
+codes, deactivation) — and a right code clears it. Two realms sharing an address keep two budgets.
+
+```yaml
+auth:
+    api:
+        two_factor_throttling:
+            max_attempts: 5          # the defaults
+            interval: '15 minutes'
+            cache_pool: ~            # a filesystem pool of the bundle, "auth.two_factor_throttling.cache"
+```
+
+> ⚠️ **Clear the pool between tests.** It outlives the kernel, and a suite whose tests share one account spends
+> its budget across them: `self::getContainer()->get('auth.two_factor_throttling.cache')->clear()`. With
+> parallel processes, give each its own pools (`framework.cache.prefix_seed` per `TEST_TOKEN`).
 
 Sign-in limiter (optional)
 --------------------------
