@@ -16,7 +16,7 @@
         "doctrine/doctrine-bundle": "^2.13 || ^3.0",
         "doctrine/orm": "^3.5.3",
         "doctrine/persistence": "^3.4.5 || ^4.0",
-        "jul6art/core-bundle": "^2.3 || ^3.0",
+        "jul6art/core-bundle": "^3.10",
         "symfony/config": "^7.4 || ^8.0",
         "symfony/dependency-injection": "^7.4 || ^8.0",
         "symfony/http-kernel": "^7.4 || ^8.0",
