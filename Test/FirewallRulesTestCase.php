@@ -45,7 +45,7 @@ abstract class FirewallRulesTestCase extends KernelTestCase
                 }
             }
 
-            return $route?->getMethods();
+            return $route instanceof Route ? array_values($route->getMethods()) : null;
         };
 
         $violations = FirewallRules::violations(

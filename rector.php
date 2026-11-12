@@ -10,6 +10,7 @@ return RectorConfig::configure()
     ->withPaths([
         __DIR__.'/AuthBundle.php',
         __DIR__.'/DependencyInjection',
+        __DIR__.'/Test',
         __DIR__.'/Entity',
         __DIR__.'/Factory',
         __DIR__.'/Manager',
