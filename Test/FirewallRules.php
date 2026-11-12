@@ -21,7 +21,7 @@ final class FirewallRules
      * @param array<string, mixed>            $security       the raw `security` configuration
      * @param array<string, mixed>|null       $refreshTokens  the raw `gesdinet_jwt_refresh_token` configuration, null when the bundle is absent
      * @param callable(string): ?list<string> $logoutMethods  the methods of the route a logout path names (empty: any), null when no route has it
-     * @param list<string>                    $tokenFirewalls firewalls whose authenticator checks a long random token, not a typed password
+     * @param list<string>                    $tokenFirewalls firewalls whose authenticator checks a long random token, not a typed password: exempt from throttling only
      *
      * @return list<string>
      */
@@ -38,11 +38,13 @@ final class FirewallRules
         }
 
         // The account checker, compared between the firewalls that share the same accounts: a hosted
-        // application with accounts of its own (its own provider) answers for its own checker, and a token
-        // firewall's authenticator decides itself what it accepts.
+        // application with accounts of its own (its own provider) answers for its own checker. A token
+        // firewall stands behind it too: when its token acts as an account (a personal API token), a
+        // refusal the checker learns later applies to it without anyone thinking of it; when it is a
+        // machine's, the checker lets it through.
         $checkersByProvider = [];
         foreach ($firewalls as $name => $firewall) {
-            if (!\in_array($name, $tokenFirewalls, true) && [] !== array_intersect(self::AUTHENTICATORS, array_keys($firewall))) {
+            if ([] !== array_intersect(self::AUTHENTICATORS, array_keys($firewall))) {
                 $provider = \is_string($firewall['provider'] ?? null) ? $firewall['provider'] : '(default)';
                 $checkersByProvider[$provider][$name] = \is_string($firewall['user_checker'] ?? null) ? $firewall['user_checker'] : null;
             }

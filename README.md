@@ -7,7 +7,7 @@ Symfony auth bundle
 
 <p align="left">
     <a href="https://opensource.org/licenses/MIT" target="_blank"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
-    <img src="https://img.shields.io/static/v1?label=stable&message=v2.6.1&color=0ea5e9" alt="Version">
+    <img src="https://img.shields.io/static/v1?label=stable&message=v2.7.0&color=0ea5e9" alt="Version">
 </p>
 
 Requirements
@@ -227,7 +227,8 @@ final class FirewallRulesTest extends FirewallRulesTestCase
 
 A firewall whose custom authenticator checks a long random token — a runner's, a server agent's, a
 personal API token — and no typed password is named in `tokenFirewalls()`, with its reason: the
-list is what a review sees. The configuration is read without booting a production kernel
+list is what a review sees. It is exempt from `login_throttling` only: the account checker still
+stands behind it, so a refusal the checker learns later reaches a personal token too. The configuration is read without booting a production kernel
 (core-bundle's `Test\KernelConfiguration`).
 
 Quality assurance

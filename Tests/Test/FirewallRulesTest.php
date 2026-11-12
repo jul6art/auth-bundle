@@ -88,13 +88,18 @@ final class FirewallRulesTest extends TestCase
         self::assertSame([], FirewallRules::violations($hosted, null, self::postOnly(...)));
     }
 
-    public function testATokenFirewallAnswersForItself(): void
+    public function testATokenFirewallIsExemptFromThrottlingOnly(): void
     {
         $token = self::SECURE;
-        $token['firewalls']['agent'] = ['stateless' => true, 'custom_authenticators' => ['App\\Security\\AgentAuthenticator']];
+        $token['firewalls']['agent'] = ['stateless' => true, 'custom_authenticators' => ['App\\Security\\AgentAuthenticator'], 'user_checker' => 'App\\Security\\Checker'];
 
         self::assertNotSame([], FirewallRules::violations($token, null, self::postOnly(...)), 'Unnamed, it is a sign-in like any other.');
         self::assertSame([], FirewallRules::violations($token, null, self::postOnly(...), ['agent']));
+
+        unset($token['firewalls']['agent']['user_checker']);
+        $violations = FirewallRules::violations($token, null, self::postOnly(...), ['agent']);
+        self::assertCount(1, $violations, 'Named, it still needs the account checker.');
+        self::assertStringContainsString('Firewall "agent" uses user checker none', $violations[0]);
     }
 
     /**

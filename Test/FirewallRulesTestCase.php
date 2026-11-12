@@ -60,9 +60,9 @@ abstract class FirewallRulesTestCase extends KernelTestCase
 
     /**
      * The firewalls whose custom authenticator checks a long random token — a runner's, a server
-     * agent's, a personal API token — and not a password a person types: no guess to throttle, and
-     * the authenticator itself decides what it accepts, so the shared account checker does not apply.
-     * Override it to name one, with its reason next to it: the list is what a review sees.
+     * agent's, a personal API token — and not a password a person types: no guess to throttle, so they
+     * are exempt from login_throttling. Only from it: the shared account checker still stands behind
+     * them. Override it to name one, with its reason next to it: the list is what a review sees.
      *
      * @return list<string>
      */
