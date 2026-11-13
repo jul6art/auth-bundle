@@ -208,8 +208,49 @@ auth:
 `code` and `message` keep the shape LexikJWT answers with; `errorCode` is the value a client maps. A request
 without a token is not a failure but the entry point's business, and keeps its answer.
 
-Password services
------------------
+Account commands and password services (optional)
+--------------------------------------------------
+
+Two commands an application used to copy from the skeleton, each behind its own switch — an application keeps its
+own copy until it turns the bundle's on:
+
+```shell
+composer require symfony/console
+```
+
+```yaml
+# config/packages/auth.yaml
+auth:
+    account:
+        user_class: App\Entity\User          # the default: the bundle's own User
+        create_user:
+            enabled: true
+            admin_role: ROLE_SUPER_ADMIN      # the role --admin gives
+
+when@dev:
+    auth:
+        account:
+            dev_login_link:
+                enabled: true
+                firewall: main                # the firewall whose login_link makes the URL
+```
+
+- **`app:user:create <email> [--admin] [--first-name=…] [--last-name=…] [--set <property>=<value>]`**: the password
+  is asked hidden, never taken as an argument. The account is written through its own setters — `setFirstName()`,
+  `setLastName()` and `setIsActive(true)` when it has them, any other one by `--set` (`--set username=ada`). The
+  address is looked up normalised: `Ada@x.test` finds `ada@x.test`. `AccountCreationEvent` lets a listener
+  complete the account in the same flush (a personal space, an address taken as confirmed).
+- **`app:dev:login-link <email>`** prints a one-time sign-in URL. It and the target of its link,
+  `Jul6Art\AuthBundle\Account\Dev\LoginLinkController`, exist **in the `dev` environment only**, whatever the
+  configuration says. Route the target under `when@dev`:
+
+```yaml
+# config/routes/dev_login_link.yaml
+when@dev:
+    dev_login_link_check:
+        path: /login-link/check
+        controller: Jul6Art\AuthBundle\Account\Dev\LoginLinkController
+```
 
 `Account\PasswordWriter` (writes a password, ends the account's API sessions when gesdinet is there) and
 `Account\PasswordResetMailer` (the forgotten-password e-mail, in the account's language) serve the API sign-in and

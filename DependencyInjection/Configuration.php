@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jul6Art\AuthBundle\DependencyInjection;
 
+use Jul6Art\AuthBundle\Entity\User;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
@@ -69,6 +70,39 @@ class Configuration implements ConfigurationInterface
                             ->info('The "errorCode" of a 429. Give it the code of the application\'s other rate limits, so a client that maps one maps them all.')
                             ->defaultValue('RATE_LIMITED')
                             ->cannotBeEmpty()
+                        ->end()
+                    ->end()
+                ->end()
+                ->arrayNode('account')
+                    ->info('The account commands: app:user:create, and app:dev:login-link with the target of its link. Each is off by default: an application keeps its own until it turns the bundle\'s on. Needs symfony/console.')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->scalarNode('user_class')
+                            ->info('The account entity the commands create and look up, written through its own setters.')
+                            ->defaultValue(User::class)
+                            ->cannotBeEmpty()
+                        ->end()
+                        ->arrayNode('create_user')
+                            ->info('app:user:create: an account from the console, its password asked hidden.')
+                            ->canBeEnabled()
+                            ->children()
+                                ->scalarNode('admin_role')
+                                    ->info('The role --admin gives.')
+                                    ->defaultValue('ROLE_SUPER_ADMIN')
+                                    ->cannotBeEmpty()
+                                ->end()
+                            ->end()
+                        ->end()
+                        ->arrayNode('dev_login_link')
+                            ->info('app:dev:login-link and the target of its link (Jul6Art\\AuthBundle\\Account\\Dev\\LoginLinkController, routed by the application under when@dev). Registered in the "dev" environment only, whatever this says.')
+                            ->canBeEnabled()
+                            ->children()
+                                ->scalarNode('firewall')
+                                    ->info('The firewall whose login_link makes the URL.')
+                                    ->defaultValue('main')
+                                    ->cannotBeEmpty()
+                                ->end()
+                            ->end()
                         ->end()
                     ->end()
                 ->end()

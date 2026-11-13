@@ -7,11 +7,15 @@ namespace Jul6Art\AuthBundle\DependencyInjection;
 use ApiPlatform\State\ProcessorInterface;
 use Endroid\QrCode\Builder\Builder;
 use Gesdinet\JWTRefreshTokenBundle\GesdinetJWTRefreshTokenBundle;
+use Jul6Art\AuthBundle\Account\Command\CreateUserCommand;
+use Jul6Art\AuthBundle\Account\Command\DevLoginLinkCommand;
+use Jul6Art\AuthBundle\Account\Dev\LoginLinkController;
 use Jul6Art\AuthBundle\Account\PasswordResetMailer;
 use Jul6Art\AuthBundle\Account\PasswordWriter;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
+use Jul6Art\AuthBundle\Entity\User;
 use Jul6Art\AuthBundle\Security\ApiAuthenticationFailureNormalizer;
 use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use Lexik\Bundle\JWTAuthenticationBundle\LexikJWTAuthenticationBundle;
@@ -22,6 +26,7 @@ use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Config\FileLocator;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -75,7 +80,7 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         $config = $this->processConfiguration(new Configuration(), $configs);
         $this->loadSignInThrottling($config['sign_in_throttling'] ?? null, $container);
         $this->loadApiFailures($config['api_failures'] ?? null, $container);
-        $this->loadAccount($container);
+        $this->loadAccount($config['account'] ?? null, $container);
 
         $api = \is_array($config['api'] ?? null) ? $config['api'] : [];
         if (true !== ($api['enabled'] ?? false)) {
@@ -211,11 +216,15 @@ class AuthExtension extends Extension implements PrependExtensionInterface
     }
 
     /**
-     * The account's services (T20 lot 3): `PasswordWriter` and `PasswordResetMailer`, whenever their components are
-     * there — the API and admin-bundle's web screens call the same services. Their old names under `Api\Service\`
-     * stay aliases until 3.0.
+     * The account's services and commands (T20 lot 3).
+     *
+     * - `PasswordWriter` and `PasswordResetMailer`, whenever their components are there: the API and admin-bundle's
+     *   web screens call the same services. Their old names under `Api\Service\` stay aliases until 3.0.
+     * - `app:user:create` and `app:dev:login-link`, each behind its own switch: an application keeps its own copy
+     *   until it turns the bundle's on. The development link exists in the "dev" environment only — a URL that signs
+     *   in on a signature has nothing to do anywhere else, and the handler it needs only exists there.
      */
-    private function loadAccount(ContainerBuilder $container): void
+    private function loadAccount(mixed $config, ContainerBuilder $container): void
     {
         if (interface_exists(UserPasswordHasherInterface::class)) {
             $container->register(PasswordWriter::class, PasswordWriter::class)->setAutowired(true);
@@ -227,6 +236,51 @@ class AuthExtension extends Extension implements PrependExtensionInterface
             $container->register(PasswordResetMailer::class, PasswordResetMailer::class)->setAutowired(true);
             $container->setAlias('Jul6Art\AuthBundle\Api\Service\PasswordResetMailer', PasswordResetMailer::class)
                 ->setDeprecated('jul6art/auth-bundle', '2.8', 'The "%alias_id%" service is "Jul6Art\AuthBundle\Account\PasswordResetMailer" since 2.8.');
+        }
+
+        $config = \is_array($config) ? $config : [];
+        $userClass = $config['user_class'] ?? User::class;
+        $createUser = \is_array($config['create_user'] ?? null) ? $config['create_user'] : [];
+        $devLoginLink = \is_array($config['dev_login_link'] ?? null) ? $config['dev_login_link'] : [];
+        $createUserOn = true === ($createUser['enabled'] ?? false);
+        $devLoginLinkOn = true === ($devLoginLink['enabled'] ?? false) && 'dev' === $container->getParameter('kernel.environment');
+        if (!$createUserOn && !$devLoginLinkOn) {
+            return;
+        }
+
+        if (!\is_string($userClass) || !class_exists($userClass)) {
+            throw new \LogicException(\sprintf('auth.account.user_class names no class: "%s".', \is_string($userClass) ? $userClass : get_debug_type($userClass)));
+        }
+
+        if (!class_exists(Command::class)) {
+            throw new \LogicException('The account commands (auth.account) need "symfony/console": composer require symfony/console.');
+        }
+
+        if ($createUserOn) {
+            $adminRole = $createUser['admin_role'] ?? 'ROLE_SUPER_ADMIN';
+            $container->register(CreateUserCommand::class, CreateUserCommand::class)
+                ->setArguments([
+                    new Reference('doctrine'),
+                    new Reference('security.user_password_hasher'),
+                    new Reference('event_dispatcher'),
+                    $userClass,
+                    \is_string($adminRole) ? $adminRole : 'ROLE_SUPER_ADMIN',
+                ])
+                ->addTag('console.command', ['command' => 'app:user:create']);
+        }
+
+        if ($devLoginLinkOn) {
+            $firewall = $devLoginLink['firewall'] ?? 'main';
+            $container->register(DevLoginLinkCommand::class, DevLoginLinkCommand::class)
+                ->setArguments([
+                    new Reference('security.authenticator.login_link_handler.'.(\is_string($firewall) ? $firewall : 'main')),
+                    new Reference('doctrine'),
+                    $userClass,
+                ])
+                ->addTag('console.command', ['command' => 'app:dev:login-link']);
+            $container->register(LoginLinkController::class, LoginLinkController::class)
+                ->addTag('controller.service_arguments')
+                ->setPublic(true);
         }
     }
 
