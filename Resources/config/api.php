@@ -24,6 +24,9 @@ return static function (ContainerConfigurator $container): void {
             '../../Api/ApiResource/',
             '../../Api/Realm/Realm.php',
             '../../Api/Http/AuthCodeException.php',
+            // The old names of two services that moved to Account/ in 2.8: aliases, registered by the extension.
+            '../../Api/Service/PasswordWriter.php',
+            '../../Api/Service/PasswordResetMailer.php',
         ]);
 
     // Innermost decorator of gesdinet's manager (priority 10): its hashing decorator still wraps it.

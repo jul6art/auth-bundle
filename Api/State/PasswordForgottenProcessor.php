@@ -6,10 +6,10 @@ namespace Jul6Art\AuthBundle\Api\State;
 
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
+use Jul6Art\AuthBundle\Account\PasswordResetMailer;
 use Jul6Art\AuthBundle\Api\ApiResource\PasswordForgotten;
 use Jul6Art\AuthBundle\Api\Realm\Realms;
 use Jul6Art\AuthBundle\Api\Service\Accounts;
-use Jul6Art\AuthBundle\Api\Service\PasswordResetMailer;
 use SymfonyCasts\Bundle\ResetPassword\Exception\ResetPasswordExceptionInterface;
 use SymfonyCasts\Bundle\ResetPassword\ResetPasswordHelperInterface;
 

@@ -6,8 +6,8 @@ namespace Jul6Art\AuthBundle\Api\State;
 
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
+use Jul6Art\AuthBundle\Account\PasswordWriter;
 use Jul6Art\AuthBundle\Api\ApiResource\PasswordChange;
-use Jul6Art\AuthBundle\Api\Service\PasswordWriter;
 
 /**
  * @implements ProcessorInterface<PasswordChange, null>

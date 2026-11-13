@@ -7,6 +7,8 @@ namespace Jul6Art\AuthBundle\DependencyInjection;
 use ApiPlatform\State\ProcessorInterface;
 use Endroid\QrCode\Builder\Builder;
 use Gesdinet\JWTRefreshTokenBundle\GesdinetJWTRefreshTokenBundle;
+use Jul6Art\AuthBundle\Account\PasswordResetMailer;
+use Jul6Art\AuthBundle\Account\PasswordWriter;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
@@ -30,6 +32,7 @@ use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\ExpressionLanguage\ExpressionLanguage;
 use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\CacheStorage;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
@@ -72,6 +75,7 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         $config = $this->processConfiguration(new Configuration(), $configs);
         $this->loadSignInThrottling($config['sign_in_throttling'] ?? null, $container);
         $this->loadApiFailures($config['api_failures'] ?? null, $container);
+        $this->loadAccount($container);
 
         $api = \is_array($config['api'] ?? null) ? $config['api'] : [];
         if (true !== ($api['enabled'] ?? false)) {
@@ -204,6 +208,26 @@ class AuthExtension extends Extension implements PrependExtensionInterface
                 '%kernel.secret%',
             ]);
         $container->setAlias(SignInRateLimiter::class, 'auth.sign_in_throttling.limiter');
+    }
+
+    /**
+     * The account's services (T20 lot 3): `PasswordWriter` and `PasswordResetMailer`, whenever their components are
+     * there — the API and admin-bundle's web screens call the same services. Their old names under `Api\Service\`
+     * stay aliases until 3.0.
+     */
+    private function loadAccount(ContainerBuilder $container): void
+    {
+        if (interface_exists(UserPasswordHasherInterface::class)) {
+            $container->register(PasswordWriter::class, PasswordWriter::class)->setAutowired(true);
+            $container->setAlias('Jul6Art\AuthBundle\Api\Service\PasswordWriter', PasswordWriter::class)
+                ->setDeprecated('jul6art/auth-bundle', '2.8', 'The "%alias_id%" service is "Jul6Art\AuthBundle\Account\PasswordWriter" since 2.8.');
+        }
+
+        if (interface_exists(MailerInterface::class) && class_exists(TemplatedEmail::class)) {
+            $container->register(PasswordResetMailer::class, PasswordResetMailer::class)->setAutowired(true);
+            $container->setAlias('Jul6Art\AuthBundle\Api\Service\PasswordResetMailer', PasswordResetMailer::class)
+                ->setDeprecated('jul6art/auth-bundle', '2.8', 'The "%alias_id%" service is "Jul6Art\AuthBundle\Account\PasswordResetMailer" since 2.8.');
+        }
     }
 
     /**

@@ -208,6 +208,13 @@ auth:
 `code` and `message` keep the shape LexikJWT answers with; `errorCode` is the value a client maps. A request
 without a token is not a failure but the entry point's business, and keeps its answer.
 
+Password services
+-----------------
+
+`Account\PasswordWriter` (writes a password, ends the account's API sessions when gesdinet is there) and
+`Account\PasswordResetMailer` (the forgotten-password e-mail, in the account's language) serve the API sign-in and
+admin-bundle's web screens alike. They lived under `Api\Service\` until 2.7: the old names stay aliases until 3.0.
+
 The production firewalls, tested
 --------------------------------
 
