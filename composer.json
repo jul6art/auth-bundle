@@ -55,6 +55,10 @@
         "symfonycasts/reset-password-bundle": "^1.26"
     },
     "conflict": {
+        "symfony/cache-contracts": "<3.5",
+        "symfony/clock": "<7.4",
+        "symfony/doctrine-bridge": "<7.4",
+        "symfony/password-hasher": "<7.4",
         "symfony/translation-contracts": "<3.5"
     },
     "suggest": {
