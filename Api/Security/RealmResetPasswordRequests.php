@@ -58,11 +58,17 @@ final readonly class RealmResetPasswordRequests implements ResetPasswordRequestR
         $this->repository()->removeResetPasswordRequest($resetPasswordRequest);
     }
 
+    /**
+     * The expired requests, which symfonycasts' cleaner purges whenever a link is asked for: those of the request's realm
+     * only — another application's base, not migrated yet or out of reach, never stops this one's reset —; those of
+     * every realm outside a request (`reset-password:remove-expired`).
+     */
     #[\Override]
     public function removeExpiredResetPasswordRequests(): int
     {
+        $current = $this->realms->current();
         $removed = 0;
-        foreach ($this->realms->all() as $realm) {
+        foreach (null === $current ? $this->realms->all() : [$current] as $realm) {
             $removed += $this->repositoryOf($realm->resetPasswordRequestClass)->removeExpiredResetPasswordRequests();
         }
 

@@ -19,6 +19,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -217,6 +218,39 @@ final class ApiSignInTest extends WebTestCase
         self::assertSame(0, $this->rows('a', ResetPasswordRequest::class));
         // Realm B's account, at the same address, keeps its own.
         self::assertSame(1, $this->rows('b', RealmB\ResetPasswordRequest::class));
+    }
+
+    public function testAResetLinkIsAskedForEvenWhenAnotherRealmsBaseIsNotReady(): void
+    {
+        $this->start(twoFactorRequired: false);
+        // Realm B's base without its table yet: an application mounted before its first migration.
+        $b = $this->manager('b');
+        $b->getConnection()->executeStatement('DROP TABLE '.$b->getClassMetadata(RealmB\ResetPasswordRequest::class)->getTableName());
+
+        $this->json('a', 'POST', '/api/password/forgot', ['email' => self::EMAIL]);
+        self::assertResponseStatusCodeSame(202);
+        self::assertEmailCount(1);
+    }
+
+    public function testOutsideARequestTheExpiredRequestsOfEveryRealmArePurged(): void
+    {
+        $this->start(twoFactorRequired: false);
+        $this->json('a', 'POST', '/api/password/forgot', ['email' => self::EMAIL]);
+        $this->json('b', 'POST', '/api/password/forgot', ['email' => self::EMAIL]);
+        foreach (['a' => ResetPasswordRequest::class, 'b' => RealmB\ResetPasswordRequest::class] as $realm => $class) {
+            $manager = $this->manager($realm);
+            $metadata = $manager->getClassMetadata($class);
+            $manager->getConnection()->executeStatement('UPDATE '.$metadata->getTableName().' SET '.$metadata->getColumnName('expiresAt')." = '2000-01-01 00:00:00'");
+        }
+
+        // A console command (`reset-password:remove-expired`): no request, so no realm of its own.
+        $stack = self::getContainer()->get('request_stack');
+        self::assertInstanceOf(RequestStack::class, $stack);
+        $stack->pop();
+        $requests = self::getContainer()->get(RealmResetPasswordRequests::class);
+        self::assertInstanceOf(RealmResetPasswordRequests::class, $requests);
+        self::assertSame(2, $requests->removeExpiredResetPasswordRequests());
+        self::assertSame([0, 0], [$this->rows('a', ResetPasswordRequest::class), $this->rows('b', RealmB\ResetPasswordRequest::class)]);
     }
 
     public function testTheLogoutClearsBothCookiesAndRevokesTheRefreshToken(): void
