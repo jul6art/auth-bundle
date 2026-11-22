@@ -21,7 +21,11 @@
         </testsuite>
     </testsuites>
 
-    <source>
+    <!-- PHP 8.6 deprecates spl_object_hash(), which third-party code still calls from its own (scheb/2fa-bundle 8, api-platform
+         4, doctrine's and symfony's lowest releases): those indirect deprecations are not this bundle's to fix, and are
+         left out of the gate — its own deprecations, and its direct calls into a deprecated API, still fail it. Back to a
+         bare <source> once those packages have moved. -->
+    <source ignoreIndirectDeprecations="true">
         <include>
             <directory>.</directory>
         </include>
