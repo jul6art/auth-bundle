@@ -24,12 +24,12 @@ final class BackupCodes
         while (\count($codes) < $count) {
             $code = '';
             for ($i = 0; $i < 10; ++$i) {
-                $code .= self::ALPHABET[\random_int(0, \strlen(self::ALPHABET) - 1)];
+                $code .= self::ALPHABET[random_int(0, \strlen(self::ALPHABET) - 1)];
             }
-            $codes[$code] = \substr($code, 0, 5).'-'.\substr($code, 5);
+            $codes[$code] = substr($code, 0, 5).'-'.substr($code, 5);
         }
 
-        return \array_values($codes);
+        return array_values($codes);
     }
 
     /**
@@ -37,11 +37,11 @@ final class BackupCodes
      */
     public static function normalize(string $code): string
     {
-        return (string) \preg_replace('/[^A-Z0-9]/', '', \strtoupper($code));
+        return (string) preg_replace('/[^A-Z0-9]/', '', strtoupper($code));
     }
 
     public static function hash(string $code): string
     {
-        return \hash('sha256', self::normalize($code));
+        return hash('sha256', self::normalize($code));
     }
 }
