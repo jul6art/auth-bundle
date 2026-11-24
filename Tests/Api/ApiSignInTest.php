@@ -21,7 +21,11 @@ use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Component\Mailer\Envelope;
+use Symfony\Component\Mailer\Exception\TransportException;
+use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
+use Symfony\Component\Mime\RawMessage;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
@@ -214,6 +218,24 @@ final class ApiSignInTest extends WebTestCase
         self::assertGreaterThanOrEqual(0.25, $unknown);
         self::assertLessThan(0.05, abs($known - $unknown), 'A known address and an unknown one take the same time, within 50 ms.');
         self::assertSame(1, $this->rows('a', ResetPasswordRequest::class), 'A token for the known address only.');
+    }
+
+    public function testAnEmailThatCannotLeaveIsAnsweredAsAnyOtherRequest(): void
+    {
+        $this->start(twoFactorRequired: false);
+        // A mailer without Messenger, whose transport is down: the failure surfaces inside the request.
+        self::getContainer()->set('mailer.mailer', new class implements MailerInterface {
+            public function send(RawMessage $message, ?Envelope $envelope = null): void
+            {
+                throw new TransportException('The transport is down.');
+            }
+        });
+
+        $this->json('a', 'POST', '/api/password/forgot', ['email' => self::EMAIL]);
+
+        self::assertResponseStatusCodeSame(202);
+        self::assertSame('', (string) $this->client->getResponse()->getContent());
+        self::assertSame(1, $this->rows('a', ResetPasswordRequest::class), 'The request is kept: only its e-mail failed.');
     }
 
     public function testAnAccountsResetRequestsLeaveWithItInItsRealmOnly(): void
