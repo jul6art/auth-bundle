@@ -39,8 +39,22 @@ final class ConfigurationTest extends TestCase
             'enabled' => false,
             'two_factor_required' => true,
             'two_factor_throttling' => ['max_attempts' => 5, 'interval' => '15 minutes', 'cache_pool' => null],
+            'password_reset' => ['response_floor_ms' => 250],
             'realms' => [],
         ], $this->process([])['api']);
+    }
+
+    /**
+     * A floor is a duration: 0 turns it off, nothing goes below.
+     */
+    public function testTheForgottenPasswordsFloorIsNeverNegative(): void
+    {
+        $api = $this->process([['api' => ['password_reset' => ['response_floor_ms' => 0]]]])['api'];
+        self::assertIsArray($api);
+        self::assertSame(['response_floor_ms' => 0], $api['password_reset'] ?? null);
+
+        $this->expectException(InvalidConfigurationException::class);
+        $this->process([['api' => ['password_reset' => ['response_floor_ms' => -1]]]]);
     }
 
     public function testARealmTakesTheBundlesTemplatesUnlessItNamesItsOwn(): void

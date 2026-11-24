@@ -199,6 +199,23 @@ final class ApiSignInTest extends WebTestCase
         self::assertResponseIsSuccessful();
     }
 
+    public function testAKnownAndAnUnknownAddressTakeTheSameTime(): void
+    {
+        $this->start(twoFactorRequired: false);
+        // The first request of a kernel warms its container: never the one that is timed.
+        $this->json('a', 'POST', '/api/password/forgot', ['email' => 'warm-up@example.test']);
+
+        $known = $this->timed(fn () => $this->json('a', 'POST', '/api/password/forgot', ['email' => self::EMAIL]));
+        self::assertResponseStatusCodeSame(202);
+        $unknown = $this->timed(fn () => $this->json('a', 'POST', '/api/password/forgot', ['email' => 'nobody@example.test']));
+        self::assertResponseStatusCodeSame(202);
+
+        self::assertGreaterThanOrEqual(0.25, $known, 'The request never answers faster than its floor.');
+        self::assertGreaterThanOrEqual(0.25, $unknown);
+        self::assertLessThan(0.05, abs($known - $unknown), 'A known address and an unknown one take the same time, within 50 ms.');
+        self::assertSame(1, $this->rows('a', ResetPasswordRequest::class), 'A token for the known address only.');
+    }
+
     public function testAnAccountsResetRequestsLeaveWithItInItsRealmOnly(): void
     {
         $this->start(twoFactorRequired: false);
@@ -377,6 +394,19 @@ final class ApiSignInTest extends WebTestCase
         }
 
         return null;
+    }
+
+    /**
+     * How long the call took, in seconds.
+     *
+     * @param callable(): void $call
+     */
+    private function timed(callable $call): float
+    {
+        $startedAt = hrtime(true);
+        $call();
+
+        return (hrtime(true) - $startedAt) / 1e9;
     }
 
     /**

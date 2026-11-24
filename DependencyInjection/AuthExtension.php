@@ -12,9 +12,11 @@ use Jul6Art\AuthBundle\Account\Command\DevLoginLinkCommand;
 use Jul6Art\AuthBundle\Account\Dev\LoginLinkController;
 use Jul6Art\AuthBundle\Account\PasswordResetMailer;
 use Jul6Art\AuthBundle\Account\PasswordWriter;
+use Jul6Art\AuthBundle\Account\ResponseFloor;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
+use Jul6Art\AuthBundle\Api\State\PasswordForgottenProcessor;
 use Jul6Art\AuthBundle\Entity\User;
 use Jul6Art\AuthBundle\Security\ApiAuthenticationFailureNormalizer;
 use Jul6Art\AuthBundle\Security\SignInRateLimiter;
@@ -105,6 +107,24 @@ class AuthExtension extends Extension implements PrependExtensionInterface
 
         new PhpFileLoader($container, new FileLocator(__DIR__.'/../Resources/config'))->load('api.php');
         $this->loadTwoFactorThrottling($api['two_factor_throttling'] ?? null, $container);
+        $this->loadPasswordReset($api['password_reset'] ?? null, $container);
+    }
+
+    /**
+     * The floor of the forgotten password's request ({@see ResponseFloor}): its own service, so that admin-bundle's
+     * web screen, which holds its request to a floor of its own, never shares the API's by accident.
+     */
+    private function loadPasswordReset(mixed $config, ContainerBuilder $container): void
+    {
+        $floor = \is_array($config) ? $config['response_floor_ms'] ?? 250 : 250;
+        if (!\is_int($floor)) {
+            throw new \LogicException('The configuration of auth.api.password_reset could not be read.');
+        }
+
+        $container->register('auth.api.password_reset.response_floor', ResponseFloor::class)
+            ->setArguments([$floor]);
+        $container->getDefinition(PasswordForgottenProcessor::class)
+            ->setArgument('$floor', new Reference('auth.api.password_reset.response_floor'));
     }
 
     /**

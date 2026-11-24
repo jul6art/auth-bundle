@@ -141,6 +141,20 @@ auth:
 > its budget across them: `self::getContainer()->get('auth.two_factor_throttling.cache')->clear()`. With
 > parallel processes, give each its own pools (`framework.cache.prefix_seed` per `TEST_TOKEN`).
 
+**The forgotten password tells nothing (2.10).** `POST /api/password/forgot` answers 202, without a body, whether
+the address has an account or not, is inactive, or has a link still valid (symfonycasts' throttle). Its duration says nothing either: a known address writes a token and builds an
+e-mail, an unknown one does nothing, so the request never answers faster than a floor, the same for both.
+
+```yaml
+auth:
+    api:
+        password_reset:
+            response_floor_ms: 250   # the default; 0 turns the floor off
+```
+
+`Account\ResponseFloor` holds any work to such a floor (`$floor->hold(fn () => …)`), a failure included; admin-bundle's
+forgotten-password screen holds its request to its own.
+
 Sign-in limiter (optional)
 --------------------------
 
