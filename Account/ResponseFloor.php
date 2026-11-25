@@ -45,6 +45,8 @@ final readonly class ResponseFloor
             $floor = $this->milliseconds * 1_000;
 
             if ($elapsed < $floor) {
+                // A real wait, measured on the monotonic clock: the floor evens out the time a client sees, which a
+                // frozen test clock must not skip.
                 usleep($floor - $elapsed);
             }
         }

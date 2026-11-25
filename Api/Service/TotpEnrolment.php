@@ -11,6 +11,7 @@ use Jul6Art\AuthBundle\Api\Http\AuthCodeException;
 use Jul6Art\AuthBundle\Api\Realm\Realms;
 use Jul6Art\AuthBundle\Api\Security\BackupCodes;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
+use Jul6Art\CoreBundle\Util\Clock;
 use OTPHP\TOTP;
 use Psr\Clock\ClockInterface;
 use Scheb\TwoFactorBundle\Model\Totp\TotpConfigurationInterface;
@@ -95,7 +96,7 @@ final readonly class TotpEnrolment
             return null;
         }
 
-        $account->confirmTotp(new \DateTimeImmutable());
+        $account->confirmTotp(Clock::now());
 
         return $this->regenerateBackupCodes($account);
     }
