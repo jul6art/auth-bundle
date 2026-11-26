@@ -28,12 +28,19 @@ use Symfony\Component\Security\Http\SecurityRequestAttributes;
  *
  * ⚠️ A successful sign-in clears the second only. The IP budget bounds how many identifiers one
  * client may try, so it must survive the success of any one of them: clearing both let a client
- * that owns one account reset its sweep at will.
+ * that owns one account reset its sweep at will. It only gets back the token the success itself
+ * took, when Symfony's listener took one (see reset()).
  *
  * The keys are hashed with the application's secret, so the cache holds no address in the clear.
  */
 final class SignInRateLimiter extends AbstractRequestRateLimiter
 {
+    /**
+     * Set by Symfony's LoginThrottlingListener (its private CONSUMED_ATTRIBUTE, since 7.4.24 and 8.1.12) when it
+     * consumed the limiter before the credentials were checked.
+     */
+    private const string CONSUMED_BY_THE_LISTENER = '_security_login_throttling_consumed';
+
     /**
      * @param list<string>     $paths  the path prefixes where a request is a sign-in attempt
      * @param non-empty-string $secret the secret the keys are hashed with
@@ -58,6 +65,15 @@ final class SignInRateLimiter extends AbstractRequestRateLimiter
         }
 
         $this->localLimiter($request)->reset();
+
+        // Since Symfony 7.4.24 and 8.1.12, on a stateful firewall, the throttling listener consumes BEFORE the
+        // credentials are checked, so that concurrent attempts count too: a successful one included. That token goes
+        // back to the IP budget, as Symfony's DefaultLoginRateLimiter gives it back; kept, every success spent the
+        // IP budget, and one office signing in all day long was locked out. Before, a success consumed nothing and
+        // nothing is given back: a token returned then would let a client that owns one account refill its sweep.
+        if (true === $request->attributes->get(self::CONSUMED_BY_THE_LISTENER)) {
+            $this->globalLimiter($request)->consume(-1);
+        }
     }
 
     /**
@@ -73,9 +89,14 @@ final class SignInRateLimiter extends AbstractRequestRateLimiter
         }
 
         return [
-            $this->globalFactory->create($this->hash((string) $request->getClientIp())),
+            $this->globalLimiter($request),
             $this->localLimiter($request),
         ];
+    }
+
+    private function globalLimiter(Request $request): LimiterInterface
+    {
+        return $this->globalFactory->create($this->hash((string) $request->getClientIp()));
     }
 
     private function localLimiter(Request $request): LimiterInterface
