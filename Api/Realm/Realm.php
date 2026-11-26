@@ -7,6 +7,7 @@ namespace Jul6Art\AuthBundle\Api\Realm;
 use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenInterface;
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
 use Jul6Art\AuthBundle\Api\Account\LoginRecordInterface;
+use Jul6Art\AuthBundle\Api\Oidc\OidcSettings;
 
 /**
  * Where one application's accounts sign in: its firewalls, its classes, the name its second factor and its
@@ -23,6 +24,7 @@ final readonly class Realm
      * @param class-string<RefreshTokenInterface> $refreshTokenClass         a gesdinet refresh token entity
      * @param class-string                        $resetPasswordRequestClass a symfonycasts reset request entity, whose repository implements its interface
      * @param array<string, string>               $resetLinks                the reset screen by language, `{token}` in place of the token
+     * @param OidcSettings|null                   $oidc                      its sign-in through an OpenID provider, if enabled
      */
     public function __construct(
         public string $name,
@@ -38,6 +40,7 @@ final readonly class Realm
         public string $textTemplate,
         public string $subject,
         public string $translationDomain,
+        public ?OidcSettings $oidc = null,
     ) {
     }
 

@@ -16,6 +16,7 @@ use Jul6Art\AuthBundle\Api\Security\TwoFactorRequiredHandler;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorSuccessHandler;
 use Jul6Art\AuthBundle\Api\Security\UserChecker;
 use Jul6Art\AuthBundle\AuthBundle;
+use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcProviderDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\Account;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\RefreshToken;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\ResetPasswordRequestRepository;
@@ -32,12 +33,14 @@ use Symfony\Bundle\TwigBundle\TwigBundle;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 use Symfony\Component\Security\Core\Authorization\ExpressionLanguage;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Http\Authenticator\Token\PostAuthenticationToken;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 use SymfonyCasts\Bundle\ResetPassword\SymfonyCastsResetPasswordBundle;
 
 /**
@@ -113,6 +116,8 @@ final class ApiTestKernel extends Kernel
             'validation' => ['enabled' => true],
             'serializer' => ['enabled' => true],
             'property_access' => ['enabled' => true],
+            // Realm A's OpenID provider is a double ({@see OidcProviderDouble}): no client of the framework's.
+            'http_client' => ['enabled' => false],
         ]);
 
         $container->loadFromExtension('twig', []);
@@ -206,7 +211,7 @@ final class ApiTestKernel extends Kernel
             $host = '^'.$realm.'\.test$';
             $firewalls[$realm.'_login'] = [
                 'host' => $host,
-                'pattern' => '^/api/(login|2fa_check|2fa_cancel|enrolment)$',
+                'pattern' => '^/api/(login|2fa_check|2fa_cancel|enrolment|auth/oidc/start|auth/oidc/callback)$',
                 'provider' => $realm,
                 'user_checker' => UserChecker::class,
                 'entry_point' => ApiEntryPoint::class,
@@ -254,7 +259,15 @@ final class ApiTestKernel extends Kernel
                     'from' => 'no-reply@'.$realm.'.test',
                     'reset_links' => ['en' => 'https://'.$realm.'.test/password/{token}', 'fr' => 'https://'.$realm.'.test/mot-de-passe/{token}'],
                 ],
-            ];
+            ] + ('a' === $realm ? ['oidc' => [
+                // Realm A signs in through an OpenID provider too; realm B does not.
+                'enabled' => true,
+                'issuer' => OidcProviderDouble::ISSUER,
+                'client_id' => OidcProviderDouble::CLIENT,
+                'client_secret' => OidcProviderDouble::SECRET,
+                'after_sign_in' => '/',
+                'sign_in_page' => '/login',
+            ]] : []);
         }
 
         $container->loadFromExtension('security', [
@@ -272,6 +285,9 @@ final class ApiTestKernel extends Kernel
                 'realms' => $realms,
             ],
         ]);
+
+        $container->register('http_client', MockHttpClient::class)->setFactory([OidcProviderDouble::class, 'client'])->setPublic(true);
+        $container->setAlias(HttpClientInterface::class, 'http_client');
 
         // Silent: the refusals the tests provoke are not news.
         $container->register('logger', NullLogger::class);
