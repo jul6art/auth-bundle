@@ -8,10 +8,18 @@ use Jul6Art\AuthBundle\Security\SignInRateLimiter;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\RateLimiter\LimiterInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
+use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
+use Symfony\Component\Security\Http\Authenticator\AuthenticatorInterface;
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
+use Symfony\Component\Security\Http\Event\CheckPassportEvent;
+use Symfony\Component\Security\Http\Event\LoginSuccessEvent;
+use Symfony\Component\Security\Http\EventListener\LoginThrottlingListener;
 use Symfony\Component\Security\Http\SecurityRequestAttributes;
 
 #[CoversClass(SignInRateLimiter::class)]
@@ -102,6 +110,34 @@ final class SignInRateLimiterTest extends TestCase
         self::assertSame(5, $limiter->peek(self::request('/api/auth/login', 'other@example.test', '10.0.0.9'))->getRemainingTokens());
         self::assertTrue($limiter->consume(self::request('/api/auth/login', 'mine@example.test'))->isAccepted(), '24th attempt of the IP.');
         self::assertFalse($limiter->consume(self::request('/api/auth/login', 'mine@example.test'))->isAccepted(), 'The 26th is refused: the IP budget survived the success.');
+    }
+
+    /**
+     * The defect 7.4.24 brought: Symfony's own listener, on a stateful firewall, took a token of the IP at every
+     * successful sign-in and the limiter never gave it back — the 26th sign-in of the day from one office was refused.
+     * Before 7.4.24 the listener took nothing on a success: the same test holds, and checks that nothing is given back
+     * then (the sweep still stops at 25).
+     */
+    public function testSuccessfulSignInsThroughSymfonysListenerNeverSpendTheIpBudget(): void
+    {
+        $limiter = $this->limiter();
+        $requests = new RequestStack();
+        $listener = new LoginThrottlingListener($requests, $limiter, false);
+        $authenticator = self::createStub(AuthenticatorInterface::class);
+        $passport = new SelfValidatingPassport(new UserBadge('mine@example.test'));
+
+        for ($i = 0; $i < 30; ++$i) {
+            $request = self::request('/api/auth/login', null);
+            $requests->push($request);
+            $listener->checkPassport(new CheckPassportEvent($authenticator, $passport));
+            $listener->onSuccessfulLogin(new LoginSuccessEvent($authenticator, $passport, self::createStub(TokenInterface::class), $request, null, 'main'));
+            $requests->pop();
+        }
+
+        for ($i = 0; $i < 25; ++$i) {
+            self::assertTrue($limiter->consume(self::request('/api/auth/login', \sprintf('user%d@example.test', $i)))->isAccepted(), 'Attempt '.($i + 1).' of the sweep.');
+        }
+        self::assertFalse($limiter->consume(self::request('/api/auth/login', 'user99@example.test'))->isAccepted());
     }
 
     public function testEveryConfiguredPathCounts(): void
