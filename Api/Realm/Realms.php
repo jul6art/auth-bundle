@@ -7,6 +7,7 @@ namespace Jul6Art\AuthBundle\Api\Realm;
 use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenInterface;
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
 use Jul6Art\AuthBundle\Api\Account\LoginRecordInterface;
+use Jul6Art\AuthBundle\Api\Oidc\OidcSettings;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -24,6 +25,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  *     reset_password_request_class: class-string,
  *     issuer: string,
  *     mail: array{from: string, reset_links: array<string, string>, html_template: string, text_template: string, subject: string, translation_domain: string},
+ *     oidc?: array{enabled: bool, issuer: string|null, client_id: string|null, client_secret: string|null, backchannel: string|null, after_sign_in: string, sign_in_page: string, methods: list<string>},
  * }
  */
 final class Realms
@@ -55,6 +57,15 @@ final class Realms
                 $realm['mail']['text_template'],
                 $realm['mail']['subject'],
                 $realm['mail']['translation_domain'],
+                true === ($realm['oidc']['enabled'] ?? false) ? new OidcSettings(
+                    $realm['oidc']['issuer'],
+                    $realm['oidc']['client_id'],
+                    $realm['oidc']['client_secret'],
+                    $realm['oidc']['backchannel'],
+                    $realm['oidc']['after_sign_in'],
+                    $realm['oidc']['sign_in_page'],
+                    $realm['oidc']['methods'],
+                ) : null,
             );
         }
     }

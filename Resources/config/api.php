@@ -23,6 +23,8 @@ return static function (ContainerConfigurator $container): void {
             '../../Api/Account/',
             '../../Api/ApiResource/',
             '../../Api/Realm/Realm.php',
+            // The sign-in through an OpenID provider: registered by the extension, only for a realm that enables it.
+            '../../Api/Oidc/',
             '../../Api/Http/AuthCodeException.php',
             // The old names of two services that moved to Account/ in 2.8: aliases, registered by the extension.
             '../../Api/Service/PasswordWriter.php',

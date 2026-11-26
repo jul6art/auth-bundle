@@ -197,6 +197,61 @@ security:
 - ⚠️ The counters outlive a kernel: in tests they are shared by every class of a run. Name a pool and clear it
   before a test signs in. Never an array pool, which forgets at the end of each request.
 
+Sign-in through an OpenID provider (optional)
+---------------------------------------------
+
+A realm can also sign its accounts in through an OpenID Connect provider — a console that knows the people of
+several applications. The provider checks who signs in, with its password and its second factor; the realm finds
+**its own account of the same address** and opens the same session as its own sign-in (the same cookies, the
+sign-in recorded), without asking its second factor again: the provider's `amr` claim says one was checked. The
+realm's own sign-in keeps working. Off by default; it needs two more packages:
+
+```shell
+composer require lcobucci/jwt symfony/http-client
+```
+
+```yaml
+# config/packages/auth.yaml
+auth:
+    api:
+        realms:
+            shop:
+                firewalls: [shop_login, shop_public, shop_api]
+                oidc:
+                    enabled: true
+                    issuer: '%env(OIDC_ISSUER)%'           # as its tokens name it
+                    client_id: '%env(OIDC_CLIENT_ID)%'
+                    client_secret: '%env(OIDC_CLIENT_SECRET)%'
+                    backchannel: ~                         # where this server reaches it, when not at the issuer's address
+                    after_sign_in: '/'                     # where the browser lands once signed in
+                    sign_in_page: '/login'                 # where a refusal lands, its code in ?error=
+                    methods: [otp]                         # the factors the provider must have checked
+```
+
+Its two routes must be in the realm's **sign-in firewall** — the one with a session, which keeps the state, the
+nonce and the PKCE verifier between them:
+
+```yaml
+# config/packages/security.yaml
+security:
+    firewalls:
+        shop_login:
+            pattern: ^/api/(login|2fa_check|2fa_cancel|enrolment|auth/oidc/start|auth/oidc/callback)$
+```
+
+- `GET /api/auth/oidc/start` (`?remember=0` for a session that dies with the browser) sends the browser to the
+  provider: the authorization code flow, with a state, a nonce and a PKCE challenge (S256).
+- `GET /api/auth/oidc/callback` checks the state, exchanges the code with the verifier and the client's secret, then
+  the identity token: signed RS256 by a key the provider publishes (asked again when it changed its pair), issued by
+  the issuer, for this client, valid now, with this sign-in's nonce, the factors of `methods` in its `amr`, and a
+  verified address.
+- A refusal goes back to `sign_in_page` with a code to translate: `auth.oidc.denied`, `auth.oidc.invalid`,
+  `auth.oidc.no_account` (no account of that address in this realm — none is created), `auth.oidc.inactive`,
+  `auth.oidc.factor`, `auth.oidc.unavailable`.
+- A kernel that hosts several applications, each its own client of the provider, tells the client per request: a
+  service implementing `Jul6Art\AuthBundle\Api\Oidc\OidcClientResolver` (autoconfigured) instead of `issuer`,
+  `client_id` and `client_secret`.
+
 API failures (optional)
 -----------------------
 

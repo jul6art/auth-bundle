@@ -13,6 +13,9 @@ use Jul6Art\AuthBundle\Account\Dev\LoginLinkController;
 use Jul6Art\AuthBundle\Account\PasswordResetMailer;
 use Jul6Art\AuthBundle\Account\PasswordWriter;
 use Jul6Art\AuthBundle\Account\ResponseFloor;
+use Jul6Art\AuthBundle\Api\Oidc\IdTokenVerifier;
+use Jul6Art\AuthBundle\Api\Oidc\OidcProvider;
+use Jul6Art\AuthBundle\Api\Oidc\OidcSignIn;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
@@ -20,6 +23,7 @@ use Jul6Art\AuthBundle\Api\State\PasswordForgottenProcessor;
 use Jul6Art\AuthBundle\Entity\User;
 use Jul6Art\AuthBundle\Security\ApiAuthenticationFailureNormalizer;
 use Jul6Art\AuthBundle\Security\SignInRateLimiter;
+use Lcobucci\JWT\Token\Parser;
 use Lexik\Bundle\JWTAuthenticationBundle\LexikJWTAuthenticationBundle;
 use Scheb\TwoFactorBundle\Model\BackupCodeInterface;
 use Scheb\TwoFactorBundle\SchebTwoFactorBundle;
@@ -43,6 +47,7 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\CacheStorage;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 use SymfonyCasts\Bundle\ResetPassword\SymfonyCastsResetPasswordBundle;
 
 /**
@@ -106,8 +111,34 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         $container->setParameter('auth.api.realms', $realms);
 
         new PhpFileLoader($container, new FileLocator(__DIR__.'/../Resources/config'))->load('api.php');
+        $this->loadOidc($realms, $container);
         $this->loadTwoFactorThrottling($api['two_factor_throttling'] ?? null, $container);
         $this->loadPasswordReset($api['password_reset'] ?? null, $container);
+    }
+
+    /**
+     * The sign-in through an OpenID provider, for a realm that enables it: its packages checked first, its services
+     * registered — none otherwise, so that an application that does not use it needs nothing more.
+     *
+     * @param array<mixed> $realms
+     */
+    private function loadOidc(array $realms, ContainerBuilder $container): void
+    {
+        $enabled = false;
+        foreach ($realms as $realm) {
+            $enabled = $enabled || (\is_array($realm) && \is_array($realm['oidc'] ?? null) && true === ($realm['oidc']['enabled'] ?? false));
+        }
+        if (!$enabled) {
+            return;
+        }
+        foreach (['lcobucci/jwt' => Parser::class, 'symfony/http-client' => HttpClientInterface::class] as $package => $class) {
+            if (!class_exists($class) && !interface_exists($class)) {
+                throw new \LogicException(\sprintf('The sign-in through an OpenID provider (auth.api.realms.*.oidc) needs "%s": composer require %s.', $package, $package));
+            }
+        }
+        foreach ([OidcProvider::class, IdTokenVerifier::class, OidcSignIn::class] as $class) {
+            $container->register($class, $class)->setAutowired(true)->setAutoconfigured(true);
+        }
     }
 
     /**
