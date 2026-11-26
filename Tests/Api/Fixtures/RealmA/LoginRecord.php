@@ -6,11 +6,14 @@ namespace Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA;
 
 use Doctrine\ORM\Mapping as ORM;
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
-use Jul6Art\AuthBundle\Api\Account\LoginRecordInterface;
+use Jul6Art\AuthBundle\Api\Account\AssistedLoginRecordInterface;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'login_record')]
-class LoginRecord implements LoginRecordInterface
+/**
+ * Realm A keeps who acted for the account in an assisted session; realm B's records do not.
+ */
+class LoginRecord implements AssistedLoginRecordInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -20,6 +23,9 @@ class LoginRecord implements LoginRecordInterface
     #[ORM\ManyToOne]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     private Account $account;
+
+    #[ORM\Column(length: 180, nullable: true)]
+    private ?string $assistedBy = null;
 
     public function __construct(
         ApiAccountInterface $account,
@@ -53,5 +59,16 @@ class LoginRecord implements LoginRecordInterface
     public function getUserAgent(): ?string
     {
         return $this->userAgent;
+    }
+
+    #[\Override]
+    public function assistedBy(string $assistant): void
+    {
+        $this->assistedBy = $assistant;
+    }
+
+    public function getAssistedBy(): ?string
+    {
+        return $this->assistedBy;
     }
 }

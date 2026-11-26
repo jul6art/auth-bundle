@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace Jul6Art\AuthBundle\Api\Security;
 
 use Doctrine\Persistence\ManagerRegistry;
+use Gesdinet\JWTRefreshTokenBundle\Model\RefreshTokenManagerInterface;
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
+use Jul6Art\AuthBundle\Api\Account\AssistedLoginRecordInterface;
+use Jul6Art\AuthBundle\Api\Assistance\Assistance;
+use Jul6Art\AuthBundle\Api\Assistance\Assistances;
 use Jul6Art\AuthBundle\Api\Realm\Realms;
 use Lexik\Bundle\JWTAuthenticationBundle\Security\Http\Authentication\AuthenticationSuccessHandler;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -31,18 +35,30 @@ final readonly class SessionCookies
         private Realms $realms,
         private ManagerRegistry $registry,
         private TokenStorageInterface $tokenStorage,
+        private RefreshTokenManagerInterface $refreshTokens,
     ) {
     }
 
     /**
-     * @param array<string, mixed> $data     the body of the response — never a token
-     * @param bool|null            $remember the "stay signed in" box, when the sign-in kept it elsewhere than in its session
+     * @param array<string, mixed> $data       the body of the response — never a token
+     * @param bool|null            $remember   the "stay signed in" box, when the sign-in kept it elsewhere than in its session
+     * @param Assistance|null      $assistance someone acting for the account: its access token names them and ends with
+     *                                         the assistance, no refresh token goes with it, and its cookies die with
+     *                                         the browser (the sign-in passes `$remember` false)
      */
-    public function issue(ApiAccountInterface $account, Request $request, array $data, ?bool $remember = null): Response
+    public function issue(ApiAccountInterface $account, Request $request, array $data, ?bool $remember = null, ?Assistance $assistance = null): Response
     {
         // ⚠️ The body goes IN, not after: with both tokens out of the body, lexik turns a response without data
         // into a 204 — and a 204 loses whatever body is set on it later.
-        $response = $this->jwtSuccess->handleAuthenticationSuccess($account, null, $data);
+        $request->attributes->set(Assistances::ATTRIBUTE, $assistance);
+        try {
+            $response = $this->jwtSuccess->handleAuthenticationSuccess($account, null, $data);
+        } finally {
+            $request->attributes->remove(Assistances::ATTRIBUTE);
+        }
+        if (null !== $assistance) {
+            $this->withoutRefresh($response);
+        }
 
         // "Stay signed in" unticked: the cookies die with the browser. Ticked — the default of a client that says
         // nothing —, the refresh cookie keeps its lifetime.
@@ -53,7 +69,7 @@ final readonly class SessionCookies
             }
         }
 
-        $this->record($account, $request);
+        $this->record($account, $request, $assistance);
 
         // Without a token, the firewall's context listener removes it from the session instead of writing it
         // back: nothing of the sign-in outlives its last step.
@@ -65,7 +81,24 @@ final readonly class SessionCookies
         return $response;
     }
 
-    private function record(ApiAccountInterface $account, Request $request): void
+    /**
+     * An assisted session is never refreshed: gesdinet's token, issued with the access token, is removed — from the base
+     * and from the response. Its access token ends with the assistance (AssistanceJwtSubscriber).
+     */
+    private function withoutRefresh(Response $response): void
+    {
+        foreach ($response->headers->getCookies() as $cookie) {
+            if (LogoutSubscriber::REFRESH_COOKIE === $cookie->getName()) {
+                $refresh = null === $cookie->getValue() ? null : $this->refreshTokens->get($cookie->getValue());
+                if (null !== $refresh) {
+                    $this->refreshTokens->delete($refresh);
+                }
+                $response->headers->removeCookie($cookie->getName(), $cookie->getPath(), $cookie->getDomain());
+            }
+        }
+    }
+
+    private function record(ApiAccountInterface $account, Request $request, ?Assistance $assistance = null): void
     {
         $realm = $this->realms->of($account);
         if (null === $realm) {
@@ -78,7 +111,11 @@ final readonly class SessionCookies
         }
 
         $userAgent = $request->headers->get('User-Agent');
-        $manager->persist(new ($realm->loginRecordClass)($account, $request->getClientIp(), null === $userAgent ? null : mb_substr($userAgent, 0, 255)));
+        $record = new ($realm->loginRecordClass)($account, $request->getClientIp(), null === $userAgent ? null : mb_substr($userAgent, 0, 255));
+        if (null !== $assistance && $record instanceof AssistedLoginRecordInterface) {
+            $record->assistedBy($assistance->assistant);
+        }
+        $manager->persist($record);
         $manager->flush();
     }
 }

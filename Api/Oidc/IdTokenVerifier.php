@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jul6Art\AuthBundle\Api\Oidc;
 
+use Jul6Art\AuthBundle\Api\Assistance\Assistances;
 use Lcobucci\JWT\Encoding\JoseEncoder;
 use Lcobucci\JWT\Signer\Key\InMemory;
 use Lcobucci\JWT\Signer\Rsa\Sha256;
@@ -33,7 +34,10 @@ final readonly class IdTokenVerifier
     /**
      * @param list<string> $methods the factors the provider must have checked
      *
-     * @return array{email: string, subject: string}
+     * @return array{email: string, subject: string, actor: array{email: string, name: string}|null} `actor`: whoever acts
+     *                                                                                               for the account, when
+     *                                                                                               the provider names one
+     *                                                                                               (`act`, RFC 8693)
      */
     public function verify(OidcClient $client, #[\SensitiveParameter] string $idToken, string $nonce, array $methods): array
     {
@@ -74,7 +78,16 @@ final readonly class IdTokenVerifier
             throw new OidcRefusal('auth.oidc.invalid', 'no verified address');
         }
 
-        return ['email' => $email, 'subject' => $subject];
+        $act = $claims->get(Assistances::CLAIM);
+        $actor = null;
+        if (null !== $act) {
+            if (!\is_array($act) || !\is_string($act['email'] ?? null) || '' === $act['email']) {
+                throw new OidcRefusal('auth.oidc.invalid', 'an actor without an address');
+            }
+            $actor = ['email' => $act['email'], 'name' => \is_string($act['name'] ?? null) && '' !== $act['name'] ? $act['name'] : $act['email']];
+        }
+
+        return ['email' => $email, 'subject' => $subject, 'actor' => $actor];
     }
 
     /**

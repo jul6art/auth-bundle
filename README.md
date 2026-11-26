@@ -251,6 +251,14 @@ security:
 - A refusal goes back to `sign_in_page` with a code to translate: `auth.oidc.denied`, `auth.oidc.invalid`,
   `auth.oidc.no_account` (no account of that address in this realm — none is created), `auth.oidc.inactive`,
   `auth.oidc.factor`, `auth.oidc.unavailable`.
+- **An assisted session** — the provider's controlled impersonation: its identity token names whoever acts for the
+  account (`act`, RFC 8693: `{"email", "name"}`). The realm then opens a session of its own: its access token carries
+  `act` and ends thirty minutes on (`Assistances::TTL`), no refresh token goes with it, and its cookies die with the
+  browser. The account's password, second factor and backup codes stay out of its reach (`AUTH_SELF` refuses it).
+  `GET /api/auth/assistance` tells the screens who acts and until when (204 for the account's own session);
+  `Jul6Art\AuthBundle\Api\Assistance\Assistances::current()` tells the application, to write both in its journal. A
+  login record implementing `AssistedLoginRecordInterface` keeps whoever acted; `AssistanceStarted` and
+  `AssistanceEnded` (its sign-out) are dispatched.
 - A kernel that hosts several applications, each its own client of the provider, tells the client per request: a
   service implementing `Jul6Art\AuthBundle\Api\Oidc\OidcClientResolver` (autoconfigured) instead of `issuer`,
   `client_id` and `client_secret`. When neither tells one, the sign-in is refused with `auth.oidc.unavailable`.
