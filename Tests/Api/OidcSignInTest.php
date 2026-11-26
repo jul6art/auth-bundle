@@ -6,6 +6,7 @@ namespace Jul6Art\AuthBundle\Tests\Api;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use Jul6Art\AuthBundle\Api\Oidc\PendingSignIn;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcProviderDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\Account;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\LoginRecord;
@@ -13,13 +14,16 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\BrowserKit\Cookie as BrowserCookie;
+use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
  * The sign-in through an OpenID provider, end to end: realm A on `a.test` enables it, realm B does not. The provider
  * checks who signs in; the realm finds the account of the same address and opens its own session — the same cookies as
  * its own sign-in, its second factor not asked again since the provider checked one. Everything that does not hold is
- * refused back to the sign-in page, in a code it translates.
+ * refused back to the sign-in page, in a code it translates. What the sign-in keeps between its two steps is in a cookie
+ * of its own, never in the session: a provider on another site sends the browser back without the session's cookie.
  */
 #[CoversNothing]
 final class OidcSignInTest extends WebTestCase
@@ -50,10 +54,16 @@ final class OidcSignInTest extends WebTestCase
         [$query, $location] = $this->authorization();
         self::assertStringStartsWith('https://console.test/oidc?', $location);
         self::assertSame(['code', OidcProviderDouble::CLIENT, 'https://a.test/api/auth/oidc/callback', 'S256'], [$query['response_type'], $query['client_id'], $query['redirect_uri'], $query['code_challenge_method']]);
+        // Kept in a cookie of its own, which a browser sends back from another site — and no session started.
+        $pending = $this->sent(PendingSignIn::COOKIE);
+        self::assertNotNull($pending);
+        self::assertSame([Cookie::SAMESITE_LAX, true, true, '/'], [$pending->getSameSite(), $pending->isSecure(), $pending->isHttpOnly(), $pending->getPath()]);
+        self::assertSame([], array_filter($this->client->getCookieJar()->all(), static fn (BrowserCookie $cookie): bool => PendingSignIn::COOKIE !== $cookie->getName()));
 
         $this->back($query, ['nonce' => $query['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
 
         self::assertResponseRedirects('/');
+        self::assertNull($this->client->getCookieJar()->get(PendingSignIn::COOKIE, '/', 'a.test'), 'A sign-in comes back once.');
         self::assertNotNull($this->cookie('__Host-access_token'), 'Its own session, as after its own sign-in.');
         self::assertNotNull($this->cookie('refresh_token'));
         self::assertSame(1, $this->rows(LoginRecord::class), 'Recorded as any sign-in.');
@@ -70,6 +80,13 @@ final class OidcSignInTest extends WebTestCase
         $this->back($again, ['nonce' => $again['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
         self::assertResponseRedirects('/');
         self::assertSame(2, $this->rows(LoginRecord::class));
+
+        // "Stay signed in" unticked: the cookies die with the browser.
+        $this->client->getCookieJar()->clear();
+        [$unticked] = $this->authorization('?remember=0');
+        $this->back($unticked, ['nonce' => $unticked['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
+        self::assertResponseRedirects('/');
+        self::assertSame(0, $this->sent('__Host-access_token')?->getExpiresTime());
     }
 
     public function testWhatTheRealmRefuses(): void
@@ -92,6 +109,18 @@ final class OidcSignInTest extends WebTestCase
         // Another state than its own sign-in's: a forged answer.
         [$authorization] = $this->authorization();
         $this->back(['state' => 'not-its-state'] + $authorization, ['nonce' => $authorization['nonce']] + $good);
+        self::assertResponseRedirects('/login?error=auth.oidc.invalid');
+
+        // Its cookie altered, or none — gone with the sign-in's first answer.
+        [$authorization] = $this->authorization();
+        $jar = $this->client->getCookieJar();
+        $kept = $jar->get(PendingSignIn::COOKIE, '/', 'a.test');
+        self::assertNotNull($kept);
+        $value = $kept->getValue();
+        $jar->set(new BrowserCookie(PendingSignIn::COOKIE, substr($value, 0, -1).(str_ends_with($value, 'A') ? 'B' : 'A'), null, '/', 'a.test', true, true));
+        $this->back($authorization, ['nonce' => $authorization['nonce']] + $good);
+        self::assertResponseRedirects('/login?error=auth.oidc.invalid');
+        $this->back($authorization, ['nonce' => $authorization['nonce']] + $good);
         self::assertResponseRedirects('/login?error=auth.oidc.invalid');
 
         // Signed by a key the provider does not publish; another nonce; the code refused.
@@ -134,9 +163,9 @@ final class OidcSignInTest extends WebTestCase
      *
      * @return array{0: array<string, string>, 1: string}
      */
-    private function authorization(): array
+    private function authorization(string $query = ''): array
     {
-        $this->client->request('GET', 'https://a.test/api/auth/oidc/start');
+        $this->client->request('GET', 'https://a.test/api/auth/oidc/start'.$query);
         self::assertResponseRedirects();
         $location = (string) $this->client->getResponse()->headers->get('Location');
         parse_str((string) parse_url($location, \PHP_URL_QUERY), $parsed);
@@ -165,9 +194,17 @@ final class OidcSignInTest extends WebTestCase
 
     private function cookie(string $name): ?string
     {
+        return $this->sent($name)?->getValue();
+    }
+
+    /**
+     * A cookie the last response set — not one it removed.
+     */
+    private function sent(string $name): ?Cookie
+    {
         foreach ($this->client->getResponse()->headers->getCookies() as $cookie) {
             if ($name === $cookie->getName() && !$cookie->isCleared() && null !== $cookie->getValue()) {
-                return $cookie->getValue();
+                return $cookie;
             }
         }
 
