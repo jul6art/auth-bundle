@@ -228,8 +228,8 @@ auth:
                     methods: [otp]                         # the factors the provider must have checked
 ```
 
-Its two routes must be in the realm's **sign-in firewall** — the one with a session, which keeps the state, the
-nonce and the PKCE verifier between them:
+Its two routes must be in one of the realm's firewalls — its **sign-in firewall**, with its other routes of a
+sign-in:
 
 ```yaml
 # config/packages/security.yaml
@@ -240,7 +240,10 @@ security:
 ```
 
 - `GET /api/auth/oidc/start` (`?remember=0` for a session that dies with the browser) sends the browser to the
-  provider: the authorization code flow, with a state, a nonce and a PKCE challenge (S256).
+  provider: the authorization code flow, with a state, a nonce and a PKCE challenge (S256). The state, the nonce and
+  the verifier wait in a cookie of their own, `__Host-auth_oidc` — signed with the kernel's secret, ten minutes,
+  `SameSite=Lax` —, never in the session: its cookie is `SameSite=Strict`, and a browser that a provider on another
+  site sends back does not send it.
 - `GET /api/auth/oidc/callback` checks the state, exchanges the code with the verifier and the client's secret, then
   the identity token: signed RS256 by a key the provider publishes (asked again when it changed its pair), issued by
   the issuer, for this client, valid now, with this sign-in's nonce, the factors of `methods` in its `amr`, and a
@@ -250,7 +253,7 @@ security:
   `auth.oidc.factor`, `auth.oidc.unavailable`.
 - A kernel that hosts several applications, each its own client of the provider, tells the client per request: a
   service implementing `Jul6Art\AuthBundle\Api\Oidc\OidcClientResolver` (autoconfigured) instead of `issuer`,
-  `client_id` and `client_secret`.
+  `client_id` and `client_secret`. When neither tells one, the sign-in is refused with `auth.oidc.unavailable`.
 
 API failures (optional)
 -----------------------

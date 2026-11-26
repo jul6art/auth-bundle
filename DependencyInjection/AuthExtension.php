@@ -16,6 +16,7 @@ use Jul6Art\AuthBundle\Account\ResponseFloor;
 use Jul6Art\AuthBundle\Api\Oidc\IdTokenVerifier;
 use Jul6Art\AuthBundle\Api\Oidc\OidcProvider;
 use Jul6Art\AuthBundle\Api\Oidc\OidcSignIn;
+use Jul6Art\AuthBundle\Api\Oidc\PendingSignIn;
 use Jul6Art\AuthBundle\Api\Security\RealmResetPasswordRequests;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorPolicy;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorThrottle;
@@ -136,7 +137,7 @@ class AuthExtension extends Extension implements PrependExtensionInterface
                 throw new \LogicException(\sprintf('The sign-in through an OpenID provider (auth.api.realms.*.oidc) needs "%s": composer require %s.', $package, $package));
             }
         }
-        foreach ([OidcProvider::class, IdTokenVerifier::class, OidcSignIn::class] as $class) {
+        foreach ([OidcProvider::class, IdTokenVerifier::class, PendingSignIn::class, OidcSignIn::class] as $class) {
             $container->register($class, $class)->setAutowired(true)->setAutoconfigured(true);
         }
     }

@@ -23,17 +23,16 @@ use Symfony\Component\Security\Core\Exception\AccountStatusException;
  * the realm finds its account of the same address and opens the same session as its own sign-in, without asking its
  * second factor again (the provider's `amr` says it was checked).
  *
- * `start` sends the browser to the provider — the code flow, with a state, a nonce and a PKCE challenge kept in the
- * sign-in session —; `callback` checks what comes back, exchanges the code, checks the identity token, then sets the
- * session cookies and sends the browser on. A refusal goes back to the sign-in page, its code in `?error=`.
+ * `start` sends the browser to the provider — the code flow, with a state, a nonce and a PKCE challenge kept in a
+ * cookie of their own ({@see PendingSignIn}) —; `callback` checks what comes back, exchanges the code, checks the
+ * identity token, then sets the session cookies and sends the browser on. A refusal goes back to the sign-in page, its
+ * code in `?error=`.
  *
- * ⚠️ Both routes must be in the realm's sign-in firewall, the one with a session: its pattern lists them.
+ * ⚠️ Both routes must be in one of the realm's firewalls — its sign-in firewall, whose pattern lists them.
  */
 final readonly class OidcSignIn
 {
     public const string CALLBACK = '/api/auth/oidc/callback';
-
-    private const string SESSION = 'auth.oidc';
 
     /**
      * @param iterable<OidcClientResolver> $resolvers
@@ -46,6 +45,7 @@ final readonly class OidcSignIn
         private IdTokenVerifier $verifier,
         private ManagerRegistry $registry,
         private SessionCookies $cookies,
+        private PendingSignIn $pending,
         private UserChecker $userChecker,
         private LoggerInterface $logger,
     ) {
@@ -53,20 +53,17 @@ final readonly class OidcSignIn
 
     public function start(Request $request): Response
     {
-        [, $settings, $client] = $this->context($request);
+        [$realm, $settings, $client] = $this->context($request);
         $state = bin2hex(random_bytes(16));
         $nonce = bin2hex(random_bytes(16));
         $verifier = self::base64Url(random_bytes(48));
-        $session = $request->getSession();
-        $session->set(self::SESSION, ['state' => $state, 'nonce' => $nonce, 'verifier' => $verifier]);
-        $session->set(SessionCookies::REMEMBER, '0' !== $request->query->get('remember'));
         try {
-            $endpoint = $this->provider->discovery($client)['authorization_endpoint'];
+            $endpoint = $this->provider->discovery($client ?? throw new OidcRefusal('auth.oidc.unavailable', 'no client of the provider for this request'))['authorization_endpoint'];
         } catch (OidcRefusal $refusal) {
             return $this->refused($settings, $refusal);
         }
 
-        return new RedirectResponse($endpoint.(str_contains($endpoint, '?') ? '&' : '?').http_build_query([
+        $response = new RedirectResponse($endpoint.(str_contains($endpoint, '?') ? '&' : '?').http_build_query([
             'response_type' => 'code',
             'client_id' => $client->clientId,
             'redirect_uri' => self::redirectUri($request),
@@ -76,20 +73,24 @@ final readonly class OidcSignIn
             'code_challenge' => self::base64Url(hash('sha256', $verifier, true)),
             'code_challenge_method' => 'S256',
         ]));
+        $response->headers->setCookie($this->pending->cookie($realm, $state, $nonce, $verifier, '0' !== $request->query->get('remember')));
+
+        return $response;
     }
 
     public function callback(Request $request): Response
     {
         [$realm, $settings, $client] = $this->context($request);
-        $session = $request->getSession();
-        $pending = $session->get(self::SESSION);
-        $session->remove(self::SESSION);
+        $pending = $this->pending->of($request, $realm);
         try {
-            if (!\is_array($pending) || !\is_string($pending['state'] ?? null) || !\is_string($pending['nonce'] ?? null) || !\is_string($pending['verifier'] ?? null) || !hash_equals($pending['state'], $request->query->getString('state'))) {
+            if (null === $pending || !hash_equals($pending['state'], $request->query->getString('state'))) {
                 throw new OidcRefusal('auth.oidc.invalid', 'an answer to no sign-in of this browser');
             }
             if ($request->query->has('error')) {
                 throw new OidcRefusal('auth.oidc.denied', $request->query->getString('error'));
+            }
+            if (null === $client) {
+                throw new OidcRefusal('auth.oidc.unavailable', 'no client of the provider for this request');
             }
             $tokens = $this->provider->token($client, $request->query->getString('code'), self::redirectUri($request), $pending['verifier']);
             $claims = $this->verifier->verify($client, \is_string($tokens['id_token'] ?? null) ? $tokens['id_token'] : '', $pending['nonce'], $settings->methods);
@@ -101,22 +102,23 @@ final readonly class OidcSignIn
                 throw new OidcRefusal('auth.oidc.inactive', '', $exception);
             }
         } catch (OidcRefusal $refusal) {
-            return $this->refused($settings, $refusal);
+            return $this->pending->forget($this->refused($settings, $refusal));
         }
 
-        $issued = $this->cookies->issue($account, $request, []);
+        $issued = $this->cookies->issue($account, $request, [], $pending['remember']);
         $response = new RedirectResponse($settings->afterSignIn);
         foreach ($issued->headers->getCookies() as $cookie) {
             $response->headers->setCookie($cookie);
         }
 
-        return $response;
+        return $this->pending->forget($response);
     }
 
     /**
-     * The realm of the request, its settings and its client — or nothing here: a 404.
+     * The realm of the request, its settings and its client — none when neither a resolver nor its configuration tells
+     * one: the sign-in is then refused in words. A realm that does not sign in through a provider: a 404.
      *
-     * @return array{0: Realm, 1: OidcSettings, 2: OidcClient}
+     * @return array{0: Realm, 1: OidcSettings, 2: OidcClient|null}
      */
     private function context(Request $request): array
     {
@@ -132,7 +134,7 @@ final readonly class OidcSignIn
             }
         }
 
-        return [$realm, $settings, $settings->client() ?? throw new NotFoundHttpException()];
+        return [$realm, $settings, $settings->client()];
     }
 
     private function account(Realm $realm, string $email): ?ApiAccountInterface

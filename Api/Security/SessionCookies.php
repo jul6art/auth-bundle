@@ -35,9 +35,10 @@ final readonly class SessionCookies
     }
 
     /**
-     * @param array<string, mixed> $data the body of the response — never a token
+     * @param array<string, mixed> $data     the body of the response — never a token
+     * @param bool|null            $remember the "stay signed in" box, when the sign-in kept it elsewhere than in its session
      */
-    public function issue(ApiAccountInterface $account, Request $request, array $data): Response
+    public function issue(ApiAccountInterface $account, Request $request, array $data, ?bool $remember = null): Response
     {
         // ⚠️ The body goes IN, not after: with both tokens out of the body, lexik turns a response without data
         // into a 204 — and a 204 loses whatever body is set on it later.
@@ -45,7 +46,7 @@ final readonly class SessionCookies
 
         // "Stay signed in" unticked: the cookies die with the browser. Ticked — the default of a client that says
         // nothing —, the refresh cookie keeps its lifetime.
-        $remember = !$request->hasSession() || true === $request->getSession()->get(self::REMEMBER, true);
+        $remember ??= !$request->hasSession() || true === $request->getSession()->get(self::REMEMBER, true);
         if (!$remember) {
             foreach ($response->headers->getCookies() as $cookie) {
                 $response->headers->setCookie($cookie->withExpires(0));
