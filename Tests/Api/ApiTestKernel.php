@@ -16,6 +16,7 @@ use Jul6Art\AuthBundle\Api\Security\TwoFactorRequiredHandler;
 use Jul6Art\AuthBundle\Api\Security\TwoFactorSuccessHandler;
 use Jul6Art\AuthBundle\Api\Security\UserChecker;
 use Jul6Art\AuthBundle\AuthBundle;
+use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcClientResolverDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcProviderDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\Account;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\RefreshToken;
@@ -53,8 +54,13 @@ final class ApiTestKernel extends Kernel
 
     public const string SECRET = 'a-secret-only-the-tests-know-and-long-enough-for-hs256';
 
+    /**
+     * @param bool $resolved realm A's OpenID client told per request by a platform ({@see OidcClientResolverDouble}),
+     *                       not by its configuration
+     */
     public function __construct(
         private readonly bool $twoFactorRequired,
+        private readonly bool $resolved = false,
     ) {
         parent::__construct('test', true);
     }
@@ -100,7 +106,7 @@ final class ApiTestKernel extends Kernel
 
     private function buildDir(): string
     {
-        return \sprintf('%s/jul6art-auth-bundle-api-tests/%s', sys_get_temp_dir(), $this->twoFactorRequired ? 'required' : 'optional');
+        return \sprintf('%s/jul6art-auth-bundle-api-tests/%s%s', sys_get_temp_dir(), $this->twoFactorRequired ? 'required' : 'optional', $this->resolved ? '-resolved' : '');
     }
 
     private function configureContainer(ContainerBuilder $container): void
@@ -262,12 +268,13 @@ final class ApiTestKernel extends Kernel
             ] + ('a' === $realm ? ['oidc' => [
                 // Realm A signs in through an OpenID provider too; realm B does not.
                 'enabled' => true,
+                'after_sign_in' => '/',
+                'sign_in_page' => '/login',
+            ] + ($this->resolved ? [] : [
                 'issuer' => OidcProviderDouble::ISSUER,
                 'client_id' => OidcProviderDouble::CLIENT,
                 'client_secret' => OidcProviderDouble::SECRET,
-                'after_sign_in' => '/',
-                'sign_in_page' => '/login',
-            ]] : []);
+            ])] : []);
         }
 
         $container->loadFromExtension('security', [
@@ -288,6 +295,9 @@ final class ApiTestKernel extends Kernel
 
         $container->register('http_client', MockHttpClient::class)->setFactory([OidcProviderDouble::class, 'client'])->setPublic(true);
         $container->setAlias(HttpClientInterface::class, 'http_client');
+        if ($this->resolved) {
+            $container->register(OidcClientResolverDouble::class, OidcClientResolverDouble::class)->setAutoconfigured(true);
+        }
 
         // Silent: the refusals the tests provoke are not news.
         $container->register('logger', NullLogger::class);

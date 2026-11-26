@@ -7,6 +7,7 @@ namespace Jul6Art\AuthBundle\Tests\Api;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Jul6Art\AuthBundle\Api\Oidc\PendingSignIn;
+use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcClientResolverDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcProviderDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\Account;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\LoginRecord;
@@ -45,7 +46,7 @@ final class OidcSignInTest extends WebTestCase
     #[\Override]
     protected static function createKernel(array $options = []): KernelInterface
     {
-        return new ApiTestKernel(true === ($options['two_factor_required'] ?? false));
+        return new ApiTestKernel(true === ($options['two_factor_required'] ?? false), true === ($options['resolved'] ?? false));
     }
 
     public function testAnAccountSignsInThroughTheProviderWithoutItsSecondFactorAgain(): void
@@ -87,6 +88,21 @@ final class OidcSignInTest extends WebTestCase
         $this->back($unticked, ['nonce' => $unticked['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
         self::assertResponseRedirects('/');
         self::assertSame(0, $this->sent('__Host-access_token')?->getExpiresTime());
+    }
+
+    public function testAPlatformTellsTheClientPerRequest(): void
+    {
+        $this->start(resolved: true);
+        [$query] = $this->authorization();
+        self::assertSame(OidcProviderDouble::CLIENT, $query['client_id']);
+        $this->back($query, ['nonce' => $query['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
+        self::assertResponseRedirects('/');
+        self::assertContains('a', OidcClientResolverDouble::$asked);
+
+        // An application the platform does not know: no client, and the realm configures none — refused in words.
+        OidcClientResolverDouble::$knows = false;
+        $this->client->request('GET', 'https://a.test/api/auth/oidc/start');
+        self::assertResponseRedirects('/login?error=auth.oidc.unavailable');
     }
 
     public function testWhatTheRealmRefuses(): void
@@ -139,10 +155,11 @@ final class OidcSignInTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
-    private function start(): void
+    private function start(bool $resolved = false): void
     {
         OidcProviderDouble::forget();
-        $this->client = self::createClient(['two_factor_required' => true]);
+        OidcClientResolverDouble::forget();
+        $this->client = self::createClient(['two_factor_required' => true, 'resolved' => $resolved]);
         $this->client->disableReboot();
         // The provider's documents are kept an hour, in a pool that outlives the kernel: its double draws a new key each run.
         $cache = self::getContainer()->get('cache.app');
