@@ -14,6 +14,7 @@ use Jul6Art\AuthBundle\Account\PasswordResetMailer;
 use Jul6Art\AuthBundle\Account\PasswordWriter;
 use Jul6Art\AuthBundle\Account\ResponseFloor;
 use Jul6Art\AuthBundle\Api\Oidc\IdTokenVerifier;
+use Jul6Art\AuthBundle\Api\Oidc\OidcClientResolver;
 use Jul6Art\AuthBundle\Api\Oidc\OidcProvider;
 use Jul6Art\AuthBundle\Api\Oidc\OidcSignIn;
 use Jul6Art\AuthBundle\Api\Oidc\PendingSignIn;
@@ -140,6 +141,7 @@ class AuthExtension extends Extension implements PrependExtensionInterface
         foreach ([OidcProvider::class, IdTokenVerifier::class, PendingSignIn::class, OidcSignIn::class] as $class) {
             $container->register($class, $class)->setAutowired(true)->setAutoconfigured(true);
         }
+        $container->registerForAutoconfiguration(OidcClientResolver::class)->addTag(OidcClientResolver::TAG);
     }
 
     /**
