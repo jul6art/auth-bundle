@@ -26,6 +26,10 @@ return static function (ContainerConfigurator $container): void {
             // The sign-in through an OpenID provider: registered by the extension, only for a realm that enables it.
             '../../Api/Oidc/',
             '../../Api/Http/AuthCodeException.php',
+            // What an assisted session is and what it dispatches: values, not services.
+            '../../Api/Assistance/Assistance.php',
+            '../../Api/Assistance/AssistanceStarted.php',
+            '../../Api/Assistance/AssistanceEnded.php',
             // The old names of two services that moved to Account/ in 2.8: aliases, registered by the extension.
             '../../Api/Service/PasswordWriter.php',
             '../../Api/Service/PasswordResetMailer.php',

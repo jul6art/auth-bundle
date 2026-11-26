@@ -6,10 +6,15 @@ namespace Jul6Art\AuthBundle\Api\Oidc;
 
 use Doctrine\Persistence\ManagerRegistry;
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
+use Jul6Art\AuthBundle\Api\Assistance\Assistance;
+use Jul6Art\AuthBundle\Api\Assistance\Assistances;
+use Jul6Art\AuthBundle\Api\Assistance\AssistanceStarted;
 use Jul6Art\AuthBundle\Api\Realm\Realm;
 use Jul6Art\AuthBundle\Api\Realm\Realms;
 use Jul6Art\AuthBundle\Api\Security\SessionCookies;
 use Jul6Art\AuthBundle\Api\Security\UserChecker;
+use Psr\Clock\ClockInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -48,6 +53,8 @@ final readonly class OidcSignIn
         private PendingSignIn $pending,
         private UserChecker $userChecker,
         private LoggerInterface $logger,
+        private EventDispatcherInterface $dispatcher,
+        private ClockInterface $clock,
     ) {
     }
 
@@ -105,10 +112,17 @@ final readonly class OidcSignIn
             return $this->pending->forget($this->refused($settings, $refusal));
         }
 
-        $issued = $this->cookies->issue($account, $request, [], $pending['remember']);
+        // Someone acting for the account (the provider's controlled impersonation): a session of its own — ended at a set
+        // time, never refreshed, its account's password and second factor out of reach.
+        $assistance = null === $claims['actor'] ? null : new Assistance($claims['actor']['email'], $claims['actor']['name'], $this->clock->now()->modify('+'.Assistances::TTL.' seconds'));
+        $issued = $this->cookies->issue($account, $request, [], null === $assistance && $pending['remember'], $assistance);
         $response = new RedirectResponse($settings->afterSignIn);
         foreach ($issued->headers->getCookies() as $cookie) {
             $response->headers->setCookie($cookie);
+        }
+        if (null !== $assistance) {
+            $this->logger->notice('An assisted session opened under {account}, for {assistant}, until {end}.', ['account' => $claims['email'], 'assistant' => $assistance->assistant, 'end' => $assistance->endsAt->format(\DATE_ATOM)]);
+            $this->dispatcher->dispatch(new AssistanceStarted($account, $assistance));
         }
 
         return $this->pending->forget($response);

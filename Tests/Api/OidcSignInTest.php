@@ -6,16 +6,20 @@ namespace Jul6Art\AuthBundle\Tests\Api;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use Jul6Art\AuthBundle\Api\Assistance\AssistanceEnded;
+use Jul6Art\AuthBundle\Api\Assistance\Assistances;
 use Jul6Art\AuthBundle\Api\Oidc\PendingSignIn;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcClientResolverDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\OidcProviderDouble;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\Account;
 use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\LoginRecord;
+use Jul6Art\AuthBundle\Tests\Api\Fixtures\RealmA\RefreshToken;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie as BrowserCookie;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -88,6 +92,62 @@ final class OidcSignInTest extends WebTestCase
         $this->back($unticked, ['nonce' => $unticked['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
         self::assertResponseRedirects('/');
         self::assertSame(0, $this->sent('__Host-access_token')?->getExpiresTime());
+    }
+
+    public function testSomeoneActingForTheAccountGetsAnAssistedSessionOfThirtyMinutesNeverRefreshed(): void
+    {
+        $this->start();
+        // Its second factor on: its own session reaches its secrets — an assisted one, never.
+        $manager = $this->manager();
+        $account = $manager->getRepository(Account::class)->findOneBy(['email' => self::EMAIL]);
+        self::assertInstanceOf(Account::class, $account);
+        $account->startTotpEnrolment('JBSWY3DPEHPK3PXP')->confirmTotp(new \DateTimeImmutable());
+        $manager->flush();
+        $ended = [];
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        self::assertInstanceOf(EventDispatcherInterface::class, $dispatcher);
+        $dispatcher->addListener(AssistanceEnded::class, static function (AssistanceEnded $event) use (&$ended): void {
+            $ended[] = $event->assistance->assistant;
+        });
+        [$query] = $this->authorization();
+        $this->back($query, ['nonce' => $query['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp'], 'act' => ['sub' => '7', 'email' => 'helper@console.test', 'name' => 'Helper']]);
+
+        self::assertResponseRedirects('/');
+        $access = $this->sent('__Host-access_token');
+        self::assertNotNull($access);
+        self::assertSame(0, $access->getExpiresTime(), 'Its cookie dies with the browser.');
+        self::assertNull($this->sent('refresh_token'), 'Never refreshed: no refresh token leaves…');
+        self::assertSame(0, $this->rows(RefreshToken::class), '… nor stays.');
+        $payload = json_decode((string) base64_decode(strtr(explode('.', (string) $access->getValue())[1] ?? '', '-_', '+/'), true), true);
+        self::assertIsArray($payload);
+        self::assertSame(['email' => 'helper@console.test', 'name' => 'Helper'], $payload['act'] ?? null, 'Its access token names whoever acts…');
+        self::assertEqualsWithDelta(time() + Assistances::TTL, $payload['exp'] ?? 0, 60, '… and ends with the assistance, thirty minutes on.');
+        $manager->clear();
+        self::assertSame(['helper@console.test'], array_map(static fn (LoginRecord $record): ?string => $record->getAssistedBy(), $manager->getRepository(LoginRecord::class)->findAll()), 'The sign-in recorded in both names.');
+
+        // The application reads who acts; the account's own secrets stay out of reach.
+        $this->client->request('GET', 'https://a.test/api/auth/assistance');
+        self::assertResponseIsSuccessful();
+        $assistance = json_decode((string) $this->client->getResponse()->getContent(), true);
+        self::assertIsArray($assistance);
+        self::assertSame(['email' => 'helper@console.test', 'name' => 'Helper'], $assistance['assistant'] ?? null);
+        $this->client->request('POST', 'https://a.test/api/me/password', server: ['CONTENT_TYPE' => 'application/json'], content: '{"currentPassword":"a","newPassword":"b"}');
+        self::assertResponseStatusCodeSame(403);
+        $this->client->request('GET', 'https://a.test/api/me/two-factor/setup');
+        self::assertResponseStatusCodeSame(403);
+
+        $this->client->request('POST', 'https://a.test/api/logout');
+        self::assertResponseStatusCodeSame(204);
+        self::assertSame(['helper@console.test'], $ended, 'Its end, dispatched.');
+
+        // The account's own session: nobody acts for it, and its secrets are its own.
+        $this->client->getCookieJar()->clear();
+        [$own] = $this->authorization();
+        $this->back($own, ['nonce' => $own['nonce'], 'email' => self::EMAIL, 'email_verified' => true, 'amr' => ['pwd', 'otp']]);
+        $this->client->request('GET', 'https://a.test/api/auth/assistance');
+        self::assertResponseStatusCodeSame(204);
+        $this->client->request('POST', 'https://a.test/api/me/password', server: ['CONTENT_TYPE' => 'application/json'], content: '{"currentPassword":"a","newPassword":"b"}');
+        self::assertNotSame(403, $this->client->getResponse()->getStatusCode(), 'Its own session reaches its password (a wrong one, refused for that).');
     }
 
     public function testAPlatformTellsTheClientPerRequest(): void

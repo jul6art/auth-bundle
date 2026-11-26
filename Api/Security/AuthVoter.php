@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Jul6Art\AuthBundle\Api\Security;
 
 use Jul6Art\AuthBundle\Api\Account\ApiAccountInterface;
+use Jul6Art\AuthBundle\Api\Assistance\Assistances;
 use Scheb\TwoFactorBundle\Security\Authentication\Token\TwoFactorTokenInterface;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Vote;
@@ -13,7 +14,8 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 /**
  * The access decisions of the sign-in's own routes.
  *
- * - `AUTH_SELF`: an active account, fully signed in — its second factor passed where it applies — acts on itself.
+ * - `AUTH_SELF`: an active account, fully signed in — its second factor passed where it applies — acts on itself; never
+ *   an assisted session (someone acting for the account): its password and second factor stay out of reach.
  * - `AUTH_ENROL`: an account in its sign-in session, whose second factor is not set up yet, enrols.
  *
  * @extends Voter<string, mixed>
@@ -40,6 +42,9 @@ final class AuthVoter extends Voter
     {
         $account = $token->getUser();
         if (!$account instanceof ApiAccountInterface || !$account->isActive() || $token instanceof TwoFactorTokenInterface) {
+            return false;
+        }
+        if (self::SELF === $attribute && $token->hasAttribute(Assistances::ATTRIBUTE)) {
             return false;
         }
 
